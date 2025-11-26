@@ -6,16 +6,39 @@
  */
 
 import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import { StatusBar, StyleSheet, useColorScheme, View, Dimensions } from 'react-native';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice } from 'react-native-vision-camera';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useFrameProcessor } from 'react-native-vision-camera';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
+import { useSkiaFrameProcessor } from 'react-native-vision-camera';
+import { PaintStyle, Skia } from '@shopify/react-native-skia';
+
+import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
+
+function getBestFormat(
+  device: CameraDevice,
+  targetWidth: number,
+  targetHeight: number,
+): CameraDeviceFormat {
+  const size = targetWidth * targetHeight;
+  return device.formats.reduce((prev, curr) => {
+    const currentSize = curr.videoWidth * curr.videoHeight;
+    const diff = Math.abs(size - currentSize);
+
+    const previousSize = prev.videoWidth * prev.videoHeight;
+    const prevDiff = Math.abs(size - previousSize);
+    if (diff < prevDiff) {
+      return curr;
+    }
+    return prev;
+  }, device.formats[0]);
+}
 
 function tensorToString(tensor: TensorflowModel['inputs'][number]): string {
   return `${tensor.dataType} [${tensor.shape}]`;
@@ -35,6 +58,13 @@ function App() {
   const { resize } = useResizePlugin();
   const [hasPermission, setHasPermission] = useState(false)
   const [plugin, setPlugin] = useState<{ model: TensorflowModel | null }>({ model: null })
+
+
+  const device = useCameraDevice('back')
+  const format = useMemo(
+    () => (device != null ? getBestFormat(device, 720, 1000) : undefined),
+    [device],
+  );
 
   useEffect(() => {
     Camera.requestCameraPermission().then((p) =>
@@ -70,7 +100,6 @@ function App() {
     loadModel();
   }, [])
 
-  const device = useCameraDevice('front')
   // const { hasPermission } = useCameraPermission()
 
   const inputTensor = plugin.model?.inputs[0];
@@ -89,28 +118,135 @@ function App() {
   //   'worklet'
   //   console.log(`Frame 345: ${frame.width}x${frame.height} (${frame.pixelFormat})`)
   // }, [])
-  const frameProcessor = useFrameProcessor((frame) => {
-    'worklet'
-    if (plugin.model != null) {
-      try {
-        const resized = resize(frame, {
+  // const frameProcessor = useFrameProcessor((frame) => {
+  //   'worklet'
+  //   if (plugin.model != null) {
+  //     try {
+  //       const resized = resize(frame, {
+  //         scale: {
+  //           width: inputWidth,
+  //           height: inputHeight,
+  //         },
+  //         pixelFormat: 'rgb',
+  //         dataType: 'uint8',
+  //         rotation: '0deg',
+  //       });
+  //       // resize(frame, 192, 192)
+  //       const outputs = plugin.model.runSync([resized])
+  //       // console.log(`Received ${outputs.length} outputs!`)
+  //       console.log(outputs)
+  //     } catch (error) {
+  //       console.error('Frame processor error:', error);
+  //     }
+  //   }
+  // }, [plugin, inputWidth, inputHeight])
+
+  const LINE_WIDTH = 5;
+  const VIEW_WIDTH = Dimensions.get('screen').width;
+
+  const SCALE = (format?.videoWidth ?? VIEW_WIDTH) / VIEW_WIDTH;
+
+  const paint = Skia.Paint();
+  paint.setStyle(PaintStyle.Fill);
+  paint.setStrokeWidth(LINE_WIDTH * SCALE);
+  paint.setColor(Skia.Color('white'));
+
+  const lines = [
+    // left shoulder -> elbow
+    5, 7,
+    // right shoulder -> elbow
+    6, 8,
+    // left elbow -> wrist
+    7, 9,
+    // right elbow -> wrist
+    8, 10,
+    // left hip -> knee
+    11, 13,
+    // right hip -> knee
+    12, 14,
+    // left knee -> ankle
+    13, 15,
+    // right knee -> ankle
+    14, 16,
+
+    // left hip -> right hip
+    11, 12,
+    // left shoulder -> right shoulder
+    5, 6,
+    // left shoulder -> left hip
+    5, 11,
+    // right shoulder -> right hip
+    6, 12,
+  ];
+
+
+  const MIN_CONFIDENCE = 0.45;
+  // const emojiFont = useFont(
+  //   require('./assets/NotoEmoji-Medium.ttf'),
+  //   EMOJI_SIZE * SCALE,
+  //   e => console.error(e),
+  // );
+
+  const fillColor = Skia.Color('green');
+  const fillPaint = Skia.Paint();
+  fillPaint.setColor(fillColor);
+
+  const rotation = '0deg'; // hack to get android oriented properly
+
+  const frameProcessor = useSkiaFrameProcessor(
+    frame => {
+      'worklet';
+
+      if (plugin.model != null) {
+        const smaller = resize(frame, {
           scale: {
             width: inputWidth,
             height: inputHeight,
           },
           pixelFormat: 'rgb',
           dataType: 'uint8',
-          rotation: '0deg',
+          rotation: rotation,
         });
-        // resize(frame, 192, 192)
-        const outputs = plugin.model.runSync([resized])
-        // console.log(`Received ${outputs.length} outputs!`)
-        console.log(outputs)
-      } catch (error) {
-        console.error('Frame processor error:', error);
+        const outputs = plugin.model.runSync([smaller]);
+
+        const output = outputs[0];
+        const frameWidth = frame.width;
+        const frameHeight = frame.height;
+        // console.log(`${frameWidth}x${frameHeight}`);
+        // console.log(`${inputWidth}x${inputHeight}`)
+        // console.log(output)
+
+        const rect = Skia.XYWHRect(0, 0, frameWidth, frameHeight);
+        frame.drawRect(rect, fillPaint);
+
+        for (let i = 0; i < lines.length; i += 2) {
+          const from = lines[i];
+          const to = lines[i + 1];
+
+          const confidence = output[from * 3 + 2];
+          if (confidence > MIN_CONFIDENCE) {
+            frame.drawLine(
+              Number(output[from * 3 + 1]) * Number(frameWidth),
+              Number(output[from * 3]) * Number(frameHeight),
+              Number(output[to * 3 + 1]) * Number(frameWidth),
+              Number(output[to * 3]) * Number(frameHeight),
+              paint,
+            );
+          }
+        }
+
+        // if (emojiFont != null) {
+        //   const faceConfidence = output[2];
+        //   if (faceConfidence > MIN_CONFIDENCE) {
+        //     const noseY = Number(output[0]) * frame.height + EMOJI_SIZE * 0.3;
+        //     const noseX = Number(output[1]) * frame.width - EMOJI_SIZE / 2;
+        //     frame.drawText('😄', noseX, noseY, paint, emojiFont);
+        //   }
+        // }
       }
-    }
-  }, [plugin, inputWidth, inputHeight])
+    },
+    [plugin, paint],
+  );
 
   if (!hasPermission) return <App2 />
   // if (device == null) return <NoCameraDeviceError />
