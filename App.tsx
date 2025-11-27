@@ -11,13 +11,14 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { Camera, useCameraDevice } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, runAsync } from 'react-native-vision-camera';
 import { useEffect, useState, useMemo } from 'react';
 import { useFrameProcessor } from 'react-native-vision-camera';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useSkiaFrameProcessor } from 'react-native-vision-camera';
 import { PaintStyle, Skia } from '@shopify/react-native-skia';
+import { useSharedValue } from 'react-native-reanimated';
 
 import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
 
@@ -58,6 +59,7 @@ function App() {
   const { resize } = useResizePlugin();
   const [hasPermission, setHasPermission] = useState(false)
   const [plugin, setPlugin] = useState<{ model: TensorflowModel | null }>({ model: null })
+  const lastFrameTime = useSharedValue(Date.now());
 
 
   const device = useCameraDevice('back')
@@ -77,8 +79,9 @@ function App() {
       try {
         console.log('Loading TFLite model...');
         const model = await loadTensorflowModel(
-          require('./models_tflite/singlepose-lightning-tflite-int8-1-4.tflite'),
-          'nnapi' // Android Neural Networks API - good balance of performance and compatibility
+          require('./models_tflite/hand_landmarks_detector.tflite'),
+          undefined
+          // 'nnapi' // Android Neural Networks API - good balance of performance and compatibility
         )
         console.log('Model loaded successfully!');
         setPlugin({ model })
@@ -118,28 +121,40 @@ function App() {
   //   'worklet'
   //   console.log(`Frame 345: ${frame.width}x${frame.height} (${frame.pixelFormat})`)
   // }, [])
-  // const frameProcessor = useFrameProcessor((frame) => {
-  //   'worklet'
-  //   if (plugin.model != null) {
-  //     try {
-  //       const resized = resize(frame, {
-  //         scale: {
-  //           width: inputWidth,
-  //           height: inputHeight,
-  //         },
-  //         pixelFormat: 'rgb',
-  //         dataType: 'uint8',
-  //         rotation: '0deg',
-  //       });
-  //       // resize(frame, 192, 192)
-  //       const outputs = plugin.model.runSync([resized])
-  //       // console.log(`Received ${outputs.length} outputs!`)
-  //       console.log(outputs)
-  //     } catch (error) {
-  //       console.error('Frame processor error:', error);
-  //     }
-  //   }
-  // }, [plugin, inputWidth, inputHeight])
+  const frameProcessor = useFrameProcessor((frame) => {
+    'worklet'
+    runAsync(frame, () => {
+      'worklet'
+      try {
+        const resized = resize(frame, {
+          scale: {
+            width: inputWidth,
+            height: inputHeight,
+          },
+          pixelFormat: 'rgb',
+          dataType: 'uint8',
+          rotation: '0deg',
+        });
+
+        const now = Date.now();
+        const diff = now - lastFrameTime.value;
+        if (diff > 0) {
+          const fps = 1000 / diff;
+          console.log(`FPS: ${fps.toFixed(1)}`);
+        }
+        lastFrameTime.value = now;
+
+        // console.log("I'm running asynchronously, possibly at a lower FPS rate!")
+
+        if (plugin.model != null) {
+          const outputs = plugin.model.runSync([resized])
+          // console.log(`Received ${outputs.length} outputs!`)
+        }
+      } catch (error) {
+        console.error('Frame processor error:', error);
+      }
+    })
+  }, [plugin, inputWidth, inputHeight, resize])
 
   const LINE_WIDTH = 5;
   const VIEW_WIDTH = Dimensions.get('screen').width;
@@ -187,66 +202,67 @@ function App() {
   //   e => console.error(e),
   // );
 
-  const fillColor = Skia.Color('green');
+  const fillColor = Skia.Color('red');
   const fillPaint = Skia.Paint();
   fillPaint.setColor(fillColor);
 
   const rotation = '0deg'; // hack to get android oriented properly
 
-  const frameProcessor = useSkiaFrameProcessor(
-    frame => {
-      'worklet';
+  // const frameProcessor = useFrameProcessor(
+  //   frame => {
+  //     'worklet';
+  // frame.render();
 
-      if (plugin.model != null) {
-        const smaller = resize(frame, {
-          scale: {
-            width: inputWidth,
-            height: inputHeight,
-          },
-          pixelFormat: 'rgb',
-          dataType: 'uint8',
-          rotation: rotation,
-        });
-        const outputs = plugin.model.runSync([smaller]);
+  // if (plugin.model != null) {
+  //   const smaller = resize(frame, {
+  //     scale: {
+  //       width: inputWidth,
+  //       height: inputHeight,
+  //     },
+  //     pixelFormat: 'rgb',
+  //     dataType: 'uint8',
+  //     rotation: rotation,
+  //   });
+  //   const outputs = plugin.model.runSync([smaller]);
 
-        const output = outputs[0];
-        const frameWidth = frame.width;
-        const frameHeight = frame.height;
-        // console.log(`${frameWidth}x${frameHeight}`);
-        // console.log(`${inputWidth}x${inputHeight}`)
-        // console.log(output)
+  //   const output = outputs[0];
+  //   const frameWidth = frame.width;
+  //   const frameHeight = frame.height;
+  //   // console.log(`${frameWidth}x${frameHeight}`);
+  //   // console.log(`${inputWidth}x${inputHeight}`)
+  //   // console.log(output)
 
-        const rect = Skia.XYWHRect(0, 0, frameWidth, frameHeight);
-        frame.drawRect(rect, fillPaint);
+  //   const rect = Skia.XYWHRect(0, 0, frameWidth, frameHeight);
+  //   // frame.drawRect(rect, fillPaint);
 
-        for (let i = 0; i < lines.length; i += 2) {
-          const from = lines[i];
-          const to = lines[i + 1];
+  //   for (let i = 0; i < lines.length; i += 2) {
+  //     const from = lines[i];
+  //     const to = lines[i + 1];
 
-          const confidence = output[from * 3 + 2];
-          if (confidence > MIN_CONFIDENCE) {
-            frame.drawLine(
-              Number(output[from * 3 + 1]) * Number(frameWidth),
-              Number(output[from * 3]) * Number(frameHeight),
-              Number(output[to * 3 + 1]) * Number(frameWidth),
-              Number(output[to * 3]) * Number(frameHeight),
-              paint,
-            );
-          }
-        }
+  //     const confidence = output[from * 3 + 2];
+  //     if (confidence > MIN_CONFIDENCE) {
+  //       frame.drawLine(
+  //         Number(output[from * 3 + 1]) * Number(frameWidth),
+  //         Number(output[from * 3]) * Number(frameHeight),
+  //         Number(output[to * 3 + 1]) * Number(frameWidth),
+  //         Number(output[to * 3]) * Number(frameHeight),
+  //         paint,
+  //       );
+  //     }
+  //   }
 
-        // if (emojiFont != null) {
-        //   const faceConfidence = output[2];
-        //   if (faceConfidence > MIN_CONFIDENCE) {
-        //     const noseY = Number(output[0]) * frame.height + EMOJI_SIZE * 0.3;
-        //     const noseX = Number(output[1]) * frame.width - EMOJI_SIZE / 2;
-        //     frame.drawText('😄', noseX, noseY, paint, emojiFont);
-        //   }
-        // }
-      }
-    },
-    [plugin, paint],
-  );
+  //   // if (emojiFont != null) {
+  //   //   const faceConfidence = output[2];
+  //   //   if (faceConfidence > MIN_CONFIDENCE) {
+  //   //     const noseY = Number(output[0]) * frame.height + EMOJI_SIZE * 0.3;
+  //   //     const noseX = Number(output[1]) * frame.width - EMOJI_SIZE / 2;
+  //   //     frame.drawText('😄', noseX, noseY, paint, emojiFont);
+  //   //   }
+  //   // }
+  // }
+  //   },
+  //   [plugin, paint],
+  // );
 
   if (!hasPermission) return <App2 />
   // if (device == null) return <NoCameraDeviceError />
@@ -255,7 +271,10 @@ function App() {
       style={StyleSheet.absoluteFill}
       device={device}
       isActive={true}
-      pixelFormat="rgb"
+      pixelFormat="yuv"
+      // enableBufferCompression={true}
+      // videoStabilizationMode="off"
+      // fps={30}
       frameProcessor={frameProcessor}
     />
   )
