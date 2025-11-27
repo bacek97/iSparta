@@ -11,7 +11,7 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { Camera, useCameraDevice, runAsync } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, runAsync, runAtTargetFps } from 'react-native-vision-camera';
 import { useEffect, useState, useMemo } from 'react';
 import { useFrameProcessor } from 'react-native-vision-camera';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
@@ -59,7 +59,9 @@ function App() {
   const { resize } = useResizePlugin();
   const [hasPermission, setHasPermission] = useState(false)
   const [plugin, setPlugin] = useState<{ model: TensorflowModel | null }>({ model: null })
+  const [plugin2, setPlugin2] = useState<{ model: TensorflowModel | null }>({ model: null })
   const lastFrameTime = useSharedValue(Date.now());
+  const frameCounter = useSharedValue(0);
 
 
   const device = useCameraDevice('back')
@@ -75,12 +77,13 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const loadModel = async () => {
+    const loadModel = async (modelPath: string, setPlugin: (plugin: { model: TensorflowModel | null }) => void) => {
       try {
         console.log('Loading TFLite model...');
         const model = await loadTensorflowModel(
-          require('./models_tflite/hand_landmarks_detector.tflite'),
-          undefined
+          require('./models_tflite/singlepose-lightning-tflite-float16-4.tflite'),
+          // 'default'
+          // 'default',
           // 'nnapi' // Android Neural Networks API - good balance of performance and compatibility
         )
         console.log('Model loaded successfully!');
@@ -100,7 +103,8 @@ function App() {
       }
     };
 
-    loadModel();
+    loadModel('./models_tflite/singlepose-lightning-tflite-float16-4.tflite', setPlugin);
+    loadModel('./models_tflite/hand_landmarks_detector.tflite', setPlugin2);
   }, [])
 
   // const { hasPermission } = useCameraPermission()
@@ -123,7 +127,8 @@ function App() {
   // }, [])
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet'
-    runAsync(frame, () => {
+
+    runAtTargetFps(30, () => {
       'worklet'
       try {
         const resized = resize(frame, {
@@ -144,17 +149,27 @@ function App() {
         }
         lastFrameTime.value = now;
 
-        // console.log("I'm running asynchronously, possibly at a lower FPS rate!")
+        frameCounter.value++;
 
-        if (plugin.model != null) {
-          const outputs = plugin.model.runSync([resized])
-          // console.log(`Received ${outputs.length} outputs!`)
+        // Чередуем модели для лучшей производительности
+        if (frameCounter.value % 2 === 0) {
+          // Четные кадры - pose detection
+          if (plugin.model != null) {
+            const outputs = plugin.model.runSync([resized]);
+            // console.log(`Pose outputs: ${outputs.length}`);
+          }
+        } else {
+          // Нечетные кадры - hand detection
+          if (plugin2.model != null) {
+            const outputs2 = plugin2.model.runSync([resized]);
+            // console.log(`Hand outputs: ${outputs2.length}`);
+          }
         }
       } catch (error) {
         console.error('Frame processor error:', error);
       }
     })
-  }, [plugin, inputWidth, inputHeight, resize])
+  }, [plugin, plugin2, inputWidth, inputHeight, resize, frameCounter])
 
   const LINE_WIDTH = 5;
   const VIEW_WIDTH = Dimensions.get('screen').width;
