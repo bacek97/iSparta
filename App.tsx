@@ -19,6 +19,7 @@ import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useSkiaFrameProcessor } from 'react-native-vision-camera';
 import { PaintStyle, Skia } from '@shopify/react-native-skia';
 import { useSharedValue } from 'react-native-reanimated';
+import { Svg, Circle } from 'react-native-svg';
 
 import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
 
@@ -281,17 +282,36 @@ function App() {
 
   if (!hasPermission) return <App2 />
   // if (device == null) return <NoCameraDeviceError />
+
+  const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
+  const centerX = screenWidth / 2;
+  const centerY = screenHeight / 2;
+  const circleRadius = 50;
+
   return (
-    <Camera
-      style={StyleSheet.absoluteFill}
-      device={device}
-      isActive={true}
-      pixelFormat="yuv"
-      // enableBufferCompression={true}
-      // videoStabilizationMode="off"
-      // fps={30}
-      frameProcessor={frameProcessor}
-    />
+    <View style={StyleSheet.absoluteFill}>
+      <Camera
+        style={StyleSheet.absoluteFill}
+        device={device}
+        isActive={true}
+        pixelFormat="yuv"
+        // enableBufferCompression={true}
+        // videoStabilizationMode="off"
+        // fps={30}
+        frameProcessor={frameProcessor}
+      />
+      <Svg style={StyleSheet.absoluteFill}>
+        <Circle
+          cx={centerX}
+          cy={centerY}
+          r={circleRadius}
+          stroke="red"
+          strokeWidth="3"
+          fill="transparent"
+        />
+      </Svg>
+    </View>
   )
 }
 
