@@ -138,16 +138,6 @@ function App() {
     runAtTargetFps(30, () => {
       'worklet'
       try {
-        const resized = resize(frame, {
-          scale: {
-            width: inputWidth,
-            height: inputHeight,
-          },
-          pixelFormat: 'rgb',
-          dataType: 'uint8',
-          rotation: '0deg',
-        });
-
         const now = Date.now();
         const diff = now - lastFrameTime.value;
         if (diff > 0) {
@@ -166,12 +156,35 @@ function App() {
         if (globalFrameCounter % 2 === 0) {
           // Четные кадры - pose detection
           if (plugin.model != null) {
+            const inputTensor = plugin.model.inputs[0];
+            const width = inputTensor.shape[1] ?? 192;
+            const height = inputTensor.shape[2] ?? 192;
+            const dataType = inputTensor.dataType === 'float32' ? 'float32' : 'uint8';
+
+            const resized = resize(frame, {
+              scale: {
+                width: width,
+                height: height,
+              },
+              pixelFormat: 'rgb',
+              dataType: dataType,
+              rotation: '0deg',
+            });
+
             if (globalFrameCounter % 60 === 0) {
               console.log(`Pose Model Signature: Inputs: ${plugin.model.inputs.map(t => `${t.dataType}[${t.shape}]`)} Outputs: ${plugin.model.outputs.map(t => `${t.dataType}[${t.shape}]`)}`);
             }
             console.log('Running Pose Detection');
             const outputs = plugin.model.runSync([resized]);
             const output = outputs[0];
+            console.log(`Output type: ${typeof output}`);
+            if (Array.isArray(output) || ArrayBuffer.isView(output)) {
+              console.log(`Output length: ${output.length}`);
+              console.log(`First 5 elements: ${output.slice(0, 5)}`);
+            } else {
+              console.log(`Output keys: ${Object.keys(output)}`);
+            }
+
 
             // Parse keypoints from output (format: [y, x, confidence] for each point)
             const numPoints = output.length / 3;
@@ -194,25 +207,60 @@ function App() {
         } else {
           // Нечетные кадры - hand detection
           if (plugin2.model != null) {
+            const inputTensor = plugin2.model.inputs[0];
+            console.log('Hand Input Tensor Type: ' + inputTensor);
+            const width = inputTensor.shape[1] ?? 224;
+            const height = inputTensor.shape[2] ?? 224;
+            const dataType = inputTensor.dataType === 'float32' ? 'float32' : 'uint8';
+
+            const resized = resize(frame, {
+              scale: {
+                width: width,
+                height: height,
+              },
+              pixelFormat: 'rgb',
+              dataType: dataType,
+              rotation: '0deg',
+            });
+
             if (globalFrameCounter % 60 === 1) {
               console.log(`Hand Model Signature: Inputs: ${plugin2.model.inputs.map(t => `${t.dataType}[${t.shape}]`)} Outputs: ${plugin2.model.outputs.map(t => `${t.dataType}[${t.shape}]`)}`);
             }
             console.log('Running Hand Detection');
             const outputs2 = plugin2.model.runSync([resized]);
-            // console.log(`Hand outputs: ${outputs2.length}`);
             const output = outputs2[0];
 
             // Parse keypoints from output (format: [y, x, confidence] for each point)
+            // Hand model output structure is different. It has 21 landmarks * 3 coordinates = 63 values.
+            // The output is just [x, y, z, x, y, z, ...] flattened.
+            // Wait, the previous log said: Outputs: float32[1,63],float32[1,1],float32[1,1],float32[1,63]
+            // So output[0] is the 63 floats.
+
             const numPoints = output.length / 3;
             const points = [];
             for (let i = 0; i < numPoints; i++) {
-              const y = parseFloat(String(output[i * 3]));
-              const x = parseFloat(String(output[i * 3 + 1]));
-              const confidence = parseFloat(String(output[i * 3 + 2]));
+              // Hand landmarks are usually x, y, z.
+              // We need to verify if it's x,y,z or y,x,z.
+              // Usually MediaPipe is x, y, z.
+              // And they are normalized [0, 1].
+
+              // Let's assume x, y, z for now based on typical MediaPipe/TFLite hand models.
+              // But the Pose model parsing above uses y, x, confidence.
+
+              // Let's log the first point to see reasonable values.
+              const val1 = parseFloat(String(output[i * 3]));
+              const val2 = parseFloat(String(output[i * 3 + 1]));
+              const val3 = parseFloat(String(output[i * 3 + 2]));
+
+              // For now, let's map them as x, y, confidence=1 (since we don't have confidence score per point in this output tensor)
+              // Or maybe the 4th output tensor is score?
+              // The signature says: float32[1,63],float32[1,1],float32[1,1],float32[1,63]
+              // The middle ones might be handedness and score.
+
               points.push({
-                y: y,
-                x: x,
-                confidence: confidence
+                x: val1,
+                y: val2,
+                confidence: 1.0 // Placeholder
               });
             }
             updateKeypoints(points);
@@ -224,7 +272,7 @@ function App() {
         console.error('Frame processor error:', error);
       }
     })
-  }, [plugin, plugin2, inputWidth, inputHeight, resize, updateKeypoints])
+  }, [plugin, plugin2, resize, updateKeypoints])
 
   const LINE_WIDTH = 5;
   const VIEW_WIDTH = Dimensions.get('screen').width;
@@ -334,6 +382,7 @@ function App() {
 
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
+  console.log('Keypoints:', JSON.stringify(keypoints, null, 2));
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -353,8 +402,8 @@ function App() {
             return (
               <Circle
                 key={index}
-                cx={point.x * screenWidth}
-                cy={point.y * screenHeight}
+                cx={point.x}
+                cy={point.y}
                 r={8}
                 stroke="red"
                 strokeWidth="2"
