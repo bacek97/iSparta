@@ -29,7 +29,7 @@ const MEDIAPIPE_TO_DEEPFIT_MAP: number[] = [
 export interface Keypoint {
     x: number;
     y: number;
-    confidence?: number;
+    confidence: number;
 }
 
 /**

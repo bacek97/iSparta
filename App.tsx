@@ -18,6 +18,16 @@ import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useRunOnJS, useSharedValue } from 'react-native-worklets-core';
 import { Svg, Circle } from 'react-native-svg';
+import {
+  extractDeepFitKeypoints,
+  normalizeKeypoints,
+  getExerciseName,
+  getExerciseProbabilities,
+  createExerciseState,
+  updateExerciseState,
+  type Keypoint,
+  type ExerciseState
+} from './deepfitUtils';
 
 import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
 
@@ -58,17 +68,22 @@ function App2() {
 }
 function App() {
   const { resize } = useResizePlugin();
-  console.log("App Version: Debug-Fix-2");
+  console.log("App Version: DeepFit-Integration-v1");
   const [hasPermission, setHasPermission] = useState(false)
   const [plugin, setPlugin] = useState<{ model: TensorflowModel | null }>({ model: null })
   const [plugin2, setPlugin2] = useState<{ model: TensorflowModel | null }>({ model: null })
+  const [pluginDeepFit, setPluginDeepFit] = useState<{ model: TensorflowModel | null }>({ model: null })
   const lastFrameTime = useSharedValue(Date.now());
-  // const frameCounter = useSharedValue(0);
   const [keypoints, setKeypoints] = useState<Array<{ x: number, y: number, confidence: number }>>([]);
+  const [exerciseState, setExerciseState] = useState<ExerciseState>(createExerciseState());
 
   const updateKeypoints = useRunOnJS((points: Array<{ x: number, y: number, confidence: number }>) => {
     setKeypoints(points);
   }, [setKeypoints]);
+
+  const updateExerciseStateJS = useRunOnJS((newState: ExerciseState) => {
+    setExerciseState(newState);
+  }, [setExerciseState]);
 
 
   const device = useCameraDevice('front')
@@ -84,34 +99,33 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const loadModel = async (modelAsset: any, setPlugin: (plugin: { model: TensorflowModel | null }) => void) => {
+    const loadModel = async (modelAsset: any, setPlugin: (plugin: { model: TensorflowModel | null }) => void, modelName: string) => {
       try {
-        console.log(`Loading TFLite model with asset ID: ${modelAsset}`);
+        console.log(`Loading ${modelName} TFLite model...`);
         const model = await loadTensorflowModel(
           modelAsset,
-          // 'default'
-          // 'default',
           'nnapi' // Android Neural Networks API - good balance of performance and compatibility
         )
-        console.log('Model loaded successfully!');
+        console.log(`${modelName} model loaded successfully!`);
         setPlugin({ model })
 
         if (model == null) {
-          console.error('Model is null after loading');
+          console.error(`${modelName} model is null after loading`);
           return;
         }
         console.log(
-          `Model: ${model.inputs.map(tensorToString)} -> ${model.outputs.map(
+          `${modelName} Model: ${model.inputs.map(tensorToString)} -> ${model.outputs.map(
             tensorToString,
           )}`,
         );
       } catch (error) {
-        console.error('Failed to load TFLite model:', error);
+        console.error(`Failed to load ${modelName} TFLite model:`, error);
       }
     };
 
-    loadModel(require('./models_tflite/singlepose-lightning-tflite-float16-4.tflite'), setPlugin);
-    loadModel(require('./models_tflite/hand_landmarks_detector-from_hand_landmarks_archive.tflite'), setPlugin2);
+    loadModel(require('./models_tflite/mediapipe/lite/pose_detector.tflite'), setPlugin, 'Pose Detection');
+    loadModel(require('./models_tflite/hand_landmarks_detector-from_hand_landmarks_archive.tflite'), setPlugin2, 'Hand Detection');
+    loadModel(require('./models_tflite/deepfit_classifier_v3.tflite'), setPluginDeepFit, 'DeepFit Classifier');
   }, [])
 
   // const { hasPermission } = useCameraPermission()
@@ -149,7 +163,7 @@ function App() {
         lastFrameTime.value = now;
 
         globalFrameCounter++;
-        // globalFrameCounter++;
+        globalFrameCounter++;
         console.log(`FrameCounter: ${globalFrameCounter}`);
 
         // Чередуем модели для лучшей производительности
@@ -189,7 +203,7 @@ function App() {
 
             // Parse keypoints from output (format: [y, x, confidence] for each point)
             const numPoints = output.length / 3;
-            const points = [];
+            const points: Keypoint[] = [];
             for (let i = 0; i < numPoints; i++) {
               const y = parseFloat(String(output[i * 3]));
               const x = parseFloat(String(output[i * 3 + 1]));
@@ -202,6 +216,45 @@ function App() {
             }
             console.log(`Parsed ${points.length} points, first point:`, points[0]);
             updateKeypoints(points);
+
+            // DeepFit Exercise Classification
+            if (pluginDeepFit.model != null && points.length === 33) {
+              try {
+                // Extract 18 keypoints for DeepFit
+                const deepfitKeypoints = extractDeepFitKeypoints(points);
+
+                // Normalize keypoints
+                const normalizedInput = normalizeKeypoints(deepfitKeypoints);
+
+                // Run DeepFit model
+                const deepfitOutputs = pluginDeepFit.model.runSync([normalizedInput]);
+                const exerciseProbs = deepfitOutputs[0] as Float32Array;
+
+                // Get exercise name and probabilities
+                const exerciseName = getExerciseName(exerciseProbs);
+                const probabilities = getExerciseProbabilities(exerciseProbs);
+
+                // Update exercise state for rep counting
+                const newState = updateExerciseState(exerciseName, exerciseState, points);
+
+                // Log results every 30 frames
+                if (globalFrameCounter % 30 === 0) {
+                  console.log('\n=== DEEPFIT EXERCISE CLASSIFICATION ===');
+                  console.log(`Exercise: ${exerciseName}`);
+                  console.log(`Reps: ${Math.floor(newState.count)}`);
+                  console.log(`Form: ${newState.form === 1 ? 'Good' : 'Bad'}`);
+                  console.log(`Feedback: ${newState.feedback}`);
+                  console.log(`Completion: ${newState.percentage.toFixed(1)}%`);
+                  console.log('Probabilities:', probabilities);
+                  console.log('======================================\n');
+                }
+
+                // Update state on JS thread
+                updateExerciseStateJS(newState);
+              } catch (error) {
+                console.error('DeepFit classification error:', error);
+              }
+            }
           } else {
             console.log('Pose model is not loaded');
           }
@@ -371,11 +424,11 @@ function App() {
   // );
 
   if (!hasPermission) return <App2 />
-  // if (device == null) return <NoCameraDeviceError />
+  if (device == null) return <View style={StyleSheet.absoluteFill}><NewAppScreen templateFileName="App.tsx" safeAreaInsets={useSafeAreaInsets()} /></View>
 
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
-  console.log('Keypoints:', JSON.stringify(keypoints, null, 2));
+  // console.log('Keypoints:', JSON.stringify(keypoints, null, 2));
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -395,10 +448,10 @@ function App() {
             return (
               <Circle
                 key={index}
-                // cx={point.x * screenWidth}
-                // cy={(1 - point.y) * screenHeight}
-                cx={(1 - point.x) * screenWidth}
-                cy={(1 - point.y) * screenWidth}
+                cx={point.x * screenWidth}
+                cy={(1 - point.y) * screenHeight}
+                // cx={(1 - point.x) * screenWidth}
+                // cy={(1 - point.y) * screenWidth}
                 // cx={(point.x)}
                 // cy={(point.y)}
                 r={8}
