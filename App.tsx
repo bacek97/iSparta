@@ -81,6 +81,68 @@ function App() {
     setKeypoints(points);
   }, [setKeypoints]);
 
+  const runDeepFitClassification = useRunOnJS((points: Keypoint[], frameCount: number) => {
+    if (pluginDeepFit.model == null) {
+      console.log('[DeepFit] Model not loaded');
+      return;
+    }
+
+    try {
+      console.log(`[DeepFit] Starting classification with ${points.length} points`);
+
+      // Extract 18 keypoints for DeepFit
+      console.log('[DeepFit] Step 1: Extracting keypoints...');
+      const deepfitKeypoints = extractDeepFitKeypoints(points);
+      console.log(`[DeepFit] Extracted ${deepfitKeypoints.length} keypoints`);
+
+      // Normalize keypoints
+      console.log('[DeepFit] Step 2: Normalizing keypoints...');
+      const normalizedInput = normalizeKeypoints(deepfitKeypoints);
+      console.log(`[DeepFit] Normalized: length=${normalizedInput.length}`);
+
+      // Run DeepFit model
+      console.log('[DeepFit] Step 3: Running model...');
+      const deepfitOutputs = pluginDeepFit.model!.runSync([normalizedInput]);
+      const exerciseProbs = deepfitOutputs[0] as Float32Array;
+      console.log(`[DeepFit] Probs length: ${exerciseProbs.length}`);
+
+      // Get exercise name and probabilities
+      console.log('[DeepFit] Step 4: Getting exercise name...');
+      const exerciseName = getExerciseName(exerciseProbs);
+      console.log(`[DeepFit] Exercise: ${exerciseName}`);
+
+      const probabilities = getExerciseProbabilities(exerciseProbs);
+
+      // Update exercise state for rep counting
+      console.log('[DeepFit] Step 5: Updating state...');
+      const newState = updateExerciseState(exerciseName, exerciseState, points);
+      console.log(`[DeepFit] State: reps=${newState.count}, form=${newState.form}`);
+
+      // Log results
+      if (frameCount % 30 === 0) {
+        console.log('\n=== DEEPFIT EXERCISE CLASSIFICATION ===');
+        console.log(`Exercise: ${exerciseName}`);
+        console.log(`Reps: ${Math.floor(newState.count)}`);
+        console.log(`Form: ${newState.form === 1 ? 'Good' : 'Bad'}`);
+        console.log(`Feedback: ${newState.feedback}`);
+        console.log(`Completion: ${newState.percentage.toFixed(1)}%`);
+        console.log('Probabilities:', probabilities);
+        console.log('======================================\n');
+      }
+
+      // Update state
+      setExerciseState(newState);
+      console.log('[DeepFit] ✓ Success!');
+    } catch (error) {
+      console.error('[DeepFit] ✗ ERROR!');
+      console.error('[DeepFit] Error:', error);
+      if (error instanceof Error) {
+        console.error('[DeepFit] Message:', error.message);
+        console.error('[DeepFit] Stack:', error.stack);
+      }
+    }
+  }, [pluginDeepFit, exerciseState, setExerciseState]);
+
   const updateExerciseStateJS = useRunOnJS((newState: ExerciseState) => {
     setExerciseState(newState);
   }, [setExerciseState]);
@@ -220,41 +282,7 @@ function App() {
             // DeepFit Exercise Classification
             // Support both MediaPipe (33 points) and MoveNet (17 points)
             if (pluginDeepFit.model != null && (points.length === 33 || points.length === 17)) {
-              try {
-                // Extract 18 keypoints for DeepFit
-                const deepfitKeypoints = extractDeepFitKeypoints(points);
-
-                // Normalize keypoints
-                const normalizedInput = normalizeKeypoints(deepfitKeypoints);
-
-                // Run DeepFit model
-                const deepfitOutputs = pluginDeepFit.model.runSync([normalizedInput]);
-                const exerciseProbs = deepfitOutputs[0] as Float32Array;
-
-                // Get exercise name and probabilities
-                const exerciseName = getExerciseName(exerciseProbs);
-                const probabilities = getExerciseProbabilities(exerciseProbs);
-
-                // Update exercise state for rep counting
-                const newState = updateExerciseState(exerciseName, exerciseState, points);
-
-                // Log results every 30 frames
-                if (globalFrameCounter % 30 === 0) {
-                  console.log('\n=== DEEPFIT EXERCISE CLASSIFICATION ===');
-                  console.log(`Exercise: ${exerciseName}`);
-                  console.log(`Reps: ${Math.floor(newState.count)}`);
-                  console.log(`Form: ${newState.form === 1 ? 'Good' : 'Bad'}`);
-                  console.log(`Feedback: ${newState.feedback}`);
-                  console.log(`Completion: ${newState.percentage.toFixed(1)}%`);
-                  console.log('Probabilities:', probabilities);
-                  console.log('======================================\n');
-                }
-
-                // Update state on JS thread
-                updateExerciseStateJS(newState);
-              } catch (error) {
-                console.error('DeepFit classification error:', error);
-              }
+              runDeepFitClassification(points, globalFrameCounter);
             }
           } else {
             console.log('Pose model is not loaded');
