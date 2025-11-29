@@ -1,6 +1,6 @@
 /**
  * DeepFit Utilities
- * Converts MediaPipe 33 landmarks to DeepFit 18 keypoints format
+ * Converts MediaPipe 33 landmarks OR MoveNet 17 landmarks to DeepFit 18 keypoints format
  */
 
 // Mapping from MediaPipe (33 points) to DeepFit (18 points)
@@ -26,6 +26,32 @@ const MEDIAPIPE_TO_DEEPFIT_MAP: number[] = [
     7   // 17: Left Ear
 ];
 
+// Mapping from MoveNet (17 points) to DeepFit (18 points)
+// MoveNet order: 0-nose, 1-left_eye, 2-right_eye, 3-left_ear, 4-right_ear,
+//                5-left_shoulder, 6-right_shoulder, 7-left_elbow, 8-right_elbow,
+//                9-left_wrist, 10-right_wrist, 11-left_hip, 12-right_hip,
+//                13-left_knee, 14-right_knee, 15-left_ankle, 16-right_ankle
+const MOVENET_TO_DEEPFIT_MAP: number[] = [
+    0,  // 0: Nose
+    -1, // 1: Neck (will be calculated as midpoint of shoulders 5,6)
+    6,  // 2: Right Shoulder
+    8,  // 3: Right Elbow
+    10, // 4: Right Wrist
+    5,  // 5: Left Shoulder
+    7,  // 6: Left Elbow
+    9,  // 7: Left Wrist
+    12, // 8: Right Hip
+    14, // 9: Right Knee
+    16, // 10: Right Ankle
+    11, // 11: Left Hip
+    13, // 12: Left Knee
+    15, // 13: Left Ankle
+    2,  // 14: Right Eye
+    1,  // 15: Left Eye
+    4,  // 16: Right Ear
+    3   // 17: Left Ear
+];
+
 export interface Keypoint {
     x: number;
     y: number;
@@ -33,13 +59,25 @@ export interface Keypoint {
 }
 
 /**
- * Extract 18 keypoints from MediaPipe's 33 landmarks
+ * Extract 18 keypoints from MediaPipe's 33 landmarks OR MoveNet's 17 landmarks
+ * Automatically detects which model based on array length
  */
-export function extractDeepFitKeypoints(mediapipeLandmarks: Keypoint[]): Keypoint[] {
-    if (mediapipeLandmarks.length < 33) {
-        throw new Error(`Expected 33 MediaPipe landmarks, got ${mediapipeLandmarks.length}`);
+export function extractDeepFitKeypoints(landmarks: Keypoint[]): Keypoint[] {
+    if (landmarks.length === 33) {
+        // MediaPipe format
+        return extractFromMediaPipe(landmarks);
+    } else if (landmarks.length === 17) {
+        // MoveNet format
+        return extractFromMoveNet(landmarks);
+    } else {
+        throw new Error(`Expected 33 (MediaPipe) or 17 (MoveNet) landmarks, got ${landmarks.length}`);
     }
+}
 
+/**
+ * Extract from MediaPipe 33 landmarks
+ */
+function extractFromMediaPipe(mediapipeLandmarks: Keypoint[]): Keypoint[] {
     const deepfitKeypoints: Keypoint[] = [];
 
     for (let i = 0; i < 18; i++) {
@@ -59,6 +97,36 @@ export function extractDeepFitKeypoints(mediapipeLandmarks: Keypoint[]): Keypoin
                 x: mediapipeLandmarks[mediapipeIndex].x,
                 y: mediapipeLandmarks[mediapipeIndex].y,
                 confidence: mediapipeLandmarks[mediapipeIndex].confidence
+            });
+        }
+    }
+
+    return deepfitKeypoints;
+}
+
+/**
+ * Extract from MoveNet 17 landmarks
+ */
+function extractFromMoveNet(movenetLandmarks: Keypoint[]): Keypoint[] {
+    const deepfitKeypoints: Keypoint[] = [];
+
+    for (let i = 0; i < 18; i++) {
+        const movenetIndex = MOVENET_TO_DEEPFIT_MAP[i];
+
+        // Special case for Neck (index 1) - calculate as midpoint of shoulders
+        if (i === 1) {
+            const leftShoulder = movenetLandmarks[5];  // MoveNet index 5
+            const rightShoulder = movenetLandmarks[6]; // MoveNet index 6
+            deepfitKeypoints.push({
+                x: (leftShoulder.x + rightShoulder.x) / 2,
+                y: (leftShoulder.y + rightShoulder.y) / 2,
+                confidence: Math.min(leftShoulder.confidence || 1, rightShoulder.confidence || 1)
+            });
+        } else {
+            deepfitKeypoints.push({
+                x: movenetLandmarks[movenetIndex].x,
+                y: movenetLandmarks[movenetIndex].y,
+                confidence: movenetLandmarks[movenetIndex].confidence
             });
         }
     }
@@ -275,7 +343,7 @@ export interface BodyAngles {
 }
 
 /**
- * Calculate body angles from MediaPipe landmarks
+ * Calculate body angles from landmarks (supports both MediaPipe 33 and MoveNet 17)
  * MediaPipe landmark indices:
  * 11: Left Shoulder, 12: Right Shoulder
  * 13: Left Elbow, 14: Right Elbow
@@ -283,37 +351,43 @@ export interface BodyAngles {
  * 23: Left Hip, 24: Right Hip
  * 25: Left Knee, 26: Right Knee
  * 27: Left Ankle, 28: Right Ankle
+ * 
+ * MoveNet landmark indices:
+ * 5: Left Shoulder, 6: Right Shoulder
+ * 7: Left Elbow, 8: Right Elbow
+ * 9: Left Wrist, 10: Right Wrist
+ * 11: Left Hip, 12: Right Hip
+ * 13: Left Knee, 14: Right Knee
+ * 15: Left Ankle, 16: Right Ankle
  */
 export function calculateBodyAngles(landmarks: Keypoint[]): BodyAngles {
-    if (landmarks.length < 33) {
-        throw new Error(`Expected 33 MediaPipe landmarks, got ${landmarks.length}`);
+    if (landmarks.length === 33) {
+        // MediaPipe format
+        return {
+            elbowLeft: calculateAngle(landmarks[11], landmarks[13], landmarks[15]),
+            elbowRight: calculateAngle(landmarks[12], landmarks[14], landmarks[16]),
+            shoulderLeft: calculateAngle(landmarks[13], landmarks[11], landmarks[23]),
+            shoulderRight: calculateAngle(landmarks[14], landmarks[12], landmarks[24]),
+            hipLeft: calculateAngle(landmarks[11], landmarks[23], landmarks[25]),
+            hipRight: calculateAngle(landmarks[12], landmarks[24], landmarks[26]),
+            kneeLeft: calculateAngle(landmarks[23], landmarks[25], landmarks[27]),
+            kneeRight: calculateAngle(landmarks[24], landmarks[26], landmarks[28])
+        };
+    } else if (landmarks.length === 17) {
+        // MoveNet format
+        return {
+            elbowLeft: calculateAngle(landmarks[5], landmarks[7], landmarks[9]),
+            elbowRight: calculateAngle(landmarks[6], landmarks[8], landmarks[10]),
+            shoulderLeft: calculateAngle(landmarks[7], landmarks[5], landmarks[11]),
+            shoulderRight: calculateAngle(landmarks[8], landmarks[6], landmarks[12]),
+            hipLeft: calculateAngle(landmarks[5], landmarks[11], landmarks[13]),
+            hipRight: calculateAngle(landmarks[6], landmarks[12], landmarks[14]),
+            kneeLeft: calculateAngle(landmarks[11], landmarks[13], landmarks[15]),
+            kneeRight: calculateAngle(landmarks[12], landmarks[14], landmarks[16])
+        };
+    } else {
+        throw new Error(`Expected 33 (MediaPipe) or 17 (MoveNet) landmarks, got ${landmarks.length}`);
     }
-
-    return {
-        // Left elbow angle: shoulder-elbow-wrist
-        elbowLeft: calculateAngle(landmarks[11], landmarks[13], landmarks[15]),
-
-        // Right elbow angle: shoulder-elbow-wrist
-        elbowRight: calculateAngle(landmarks[12], landmarks[14], landmarks[16]),
-
-        // Left shoulder angle: elbow-shoulder-hip
-        shoulderLeft: calculateAngle(landmarks[13], landmarks[11], landmarks[23]),
-
-        // Right shoulder angle: elbow-shoulder-hip
-        shoulderRight: calculateAngle(landmarks[14], landmarks[12], landmarks[24]),
-
-        // Left hip angle: shoulder-hip-knee
-        hipLeft: calculateAngle(landmarks[11], landmarks[23], landmarks[25]),
-
-        // Right hip angle: shoulder-hip-knee
-        hipRight: calculateAngle(landmarks[12], landmarks[24], landmarks[26]),
-
-        // Left knee angle: hip-knee-ankle
-        kneeLeft: calculateAngle(landmarks[23], landmarks[25], landmarks[27]),
-
-        // Right knee angle: hip-knee-ankle
-        kneeRight: calculateAngle(landmarks[24], landmarks[26], landmarks[28])
-    };
 }
 
 /**

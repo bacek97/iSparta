@@ -123,7 +123,7 @@ function App() {
       }
     };
 
-    loadModel(require('./models_tflite/mediapipe/lite/pose_detector.tflite'), setPlugin, 'Pose Detection');
+    loadModel(require('./models_tflite/singlepose-lightning-tflite-float16-4.tflite'), setPlugin, 'Pose Detection');
     loadModel(require('./models_tflite/hand_landmarks_detector-from_hand_landmarks_archive.tflite'), setPlugin2, 'Hand Detection');
     loadModel(require('./models_tflite/deepfit_classifier_v3.tflite'), setPluginDeepFit, 'DeepFit Classifier');
   }, [])
@@ -218,7 +218,8 @@ function App() {
             updateKeypoints(points);
 
             // DeepFit Exercise Classification
-            if (pluginDeepFit.model != null && points.length === 33) {
+            // Support both MediaPipe (33 points) and MoveNet (17 points)
+            if (pluginDeepFit.model != null && (points.length === 33 || points.length === 17)) {
               try {
                 // Extract 18 keypoints for DeepFit
                 const deepfitKeypoints = extractDeepFitKeypoints(points);
