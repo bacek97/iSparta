@@ -71,7 +71,7 @@ function App() {
   }, [setKeypoints]);
 
 
-  const device = useCameraDevice('back')
+  const device = useCameraDevice('front')
   const format = useMemo(
     () => (device != null ? getBestFormat(device, 720, 1000) : undefined),
     [device],
@@ -91,7 +91,7 @@ function App() {
           modelAsset,
           // 'default'
           // 'default',
-          // 'nnapi' // Android Neural Networks API - good balance of performance and compatibility
+          'nnapi' // Android Neural Networks API - good balance of performance and compatibility
         )
         console.log('Model loaded successfully!');
         setPlugin({ model })
@@ -111,7 +111,7 @@ function App() {
     };
 
     loadModel(require('./models_tflite/singlepose-lightning-tflite-float16-4.tflite'), setPlugin);
-    loadModel(require('./models_tflite/hand_landmarks_detector.tflite'), setPlugin2);
+    loadModel(require('./models_tflite/hand_landmarks_detector-from_hand_landmarks_archive.tflite'), setPlugin2);
   }, [])
 
   // const { hasPermission } = useCameraPermission()
@@ -149,6 +149,7 @@ function App() {
         lastFrameTime.value = now;
 
         globalFrameCounter++;
+        // globalFrameCounter++;
         console.log(`FrameCounter: ${globalFrameCounter}`);
 
         // Чередуем модели для лучшей производительности
@@ -168,7 +169,7 @@ function App() {
               },
               pixelFormat: 'rgb',
               dataType: dataType,
-              rotation: '0deg',
+              rotation: '90deg',
             });
 
             if (globalFrameCounter % 60 === 0) {
@@ -212,6 +213,7 @@ function App() {
             const width = inputTensor.shape[1] ?? 224;
             const height = inputTensor.shape[2] ?? 224;
             const dataType = inputTensor.dataType === 'float32' ? 'float32' : 'uint8';
+            console.log('Hand Input Tensor Typ8e: ' + dataType + inputTensor.dataType + ' ' + inputTensor.shape[1]);
 
             const resized = resize(frame, {
               scale: {
@@ -238,32 +240,23 @@ function App() {
 
             const numPoints = output.length / 3;
             const points = [];
+            let max = 0;
             for (let i = 0; i < numPoints; i++) {
-              // Hand landmarks are usually x, y, z.
-              // We need to verify if it's x,y,z or y,x,z.
-              // Usually MediaPipe is x, y, z.
-              // And they are normalized [0, 1].
-
-              // Let's assume x, y, z for now based on typical MediaPipe/TFLite hand models.
-              // But the Pose model parsing above uses y, x, confidence.
-
-              // Let's log the first point to see reasonable values.
-              const val1 = parseFloat(String(output[i * 3]));
-              const val2 = parseFloat(String(output[i * 3 + 1]));
-              const val3 = parseFloat(String(output[i * 3 + 2]));
-
-              // For now, let's map them as x, y, confidence=1 (since we don't have confidence score per point in this output tensor)
-              // Or maybe the 4th output tensor is score?
-              // The signature says: float32[1,63],float32[1,1],float32[1,1],float32[1,63]
-              // The middle ones might be handedness and score.
-
+              const y = parseFloat(String(output[i * 3])) / height;
+              const x = parseFloat(String(output[i * 3 + 1])) / width;
+              const confidence = parseFloat(String(output[i * 3 + 2]));
               points.push({
-                x: val1,
-                y: val2,
-                confidence: 1.0 // Placeholder
+                y: y,
+                x: x,
+                confidence: confidence
               });
+              max = Math.max(max, x);
+              max = Math.max(max, y);
             }
+            console.log('max', max);
+            console.log(`Parsed ${points.length} points, first point:`, points[0]);
             updateKeypoints(points);
+            console.log('update Hand Keypoints:', JSON.stringify(points, null, 2));
           } else {
             console.log('Hand model is not loaded');
           }
@@ -272,7 +265,7 @@ function App() {
         console.error('Frame processor error:', error);
       }
     })
-  }, [plugin, plugin2, resize, updateKeypoints])
+  }, [plugin, plugin2, resize, updateKeypoints, globalFrameCounter])
 
   const LINE_WIDTH = 5;
   const VIEW_WIDTH = Dimensions.get('screen').width;
@@ -398,16 +391,20 @@ function App() {
       />
       <Svg style={StyleSheet.absoluteFill}>
         {keypoints.map((point, index) => {
-          if (point.confidence > MIN_CONFIDENCE) {
+          if (point.confidence > 0.0005 || 1) {
             return (
               <Circle
                 key={index}
-                cx={point.x}
-                cy={point.y}
+                // cx={point.x * screenWidth}
+                // cy={(1 - point.y) * screenHeight}
+                cx={(1 - point.x) * screenWidth}
+                cy={(1 - point.y) * screenWidth}
+                // cx={(point.x)}
+                // cy={(point.y)}
                 r={8}
                 stroke="red"
                 strokeWidth="2"
-                fill="rgba(255, 0, 0, 0.3)"
+                fill={`rgba(255, 0, 0, ${point.confidence})`}
               />
             );
           }
