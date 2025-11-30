@@ -17,7 +17,7 @@ import { useFrameProcessor } from 'react-native-vision-camera';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useRunOnJS, useSharedValue } from 'react-native-worklets-core';
-import { Svg, Circle } from 'react-native-svg';
+import { Svg, Circle, Text } from 'react-native-svg';
 import {
   extractDeepFitKeypoints,
   normalizeKeypoints,
@@ -68,71 +68,73 @@ function App2() {
 }
 function App() {
   const { resize } = useResizePlugin();
-  console.log("App Version: DeepFit-Integration-v1");
+  // console.log("App Version: DeepFit-Integration-v1");
   const [hasPermission, setHasPermission] = useState(false)
   const [plugin, setPlugin] = useState<{ model: TensorflowModel | null }>({ model: null })
   const [plugin2, setPlugin2] = useState<{ model: TensorflowModel | null }>({ model: null })
   const [pluginDeepFit, setPluginDeepFit] = useState<{ model: TensorflowModel | null }>({ model: null })
   const lastFrameTime = useSharedValue(Date.now());
-  const [keypoints, setKeypoints] = useState<Array<{ x: number, y: number, confidence: number }>>([]);
+  const [keypoints, setKeypoints] = useState<Array<{ x: number, y: number, confidence: number, label: string }>>([]);
   const [exerciseState, setExerciseState] = useState<ExerciseState>(createExerciseState());
+  const [exerciseName, setExerciseName] = useState<string>('');
 
-  const updateKeypoints = useRunOnJS((points: Array<{ x: number, y: number, confidence: number }>) => {
+  const updateKeypoints = useRunOnJS((points: Array<{ x: number, y: number, confidence: number, label: string }>) => {
     setKeypoints(points);
   }, [setKeypoints]);
 
   const runDeepFitClassification = useRunOnJS((points: Keypoint[], frameCount: number) => {
     if (pluginDeepFit.model == null) {
-      console.log('[DeepFit] Model not loaded');
+      // console.log('[DeepFit] Model not loaded');
       return;
     }
 
     try {
-      console.log(`[DeepFit] Starting classification with ${points.length} points`);
+      // console.log(`[DeepFit] Starting classification with ${points.length} points`);
 
       // Extract 18 keypoints for DeepFit
-      console.log('[DeepFit] Step 1: Extracting keypoints...');
+      // console.log('[DeepFit] Step 1: Extracting keypoints...');
       const deepfitKeypoints = extractDeepFitKeypoints(points);
-      console.log(`[DeepFit] Extracted ${deepfitKeypoints.length} keypoints`);
+      // console.log(`[DeepFit] Extracted ${deepfitKeypoints.length} keypoints`);
 
       // Normalize keypoints
-      console.log('[DeepFit] Step 2: Normalizing keypoints...');
+      // console.log('[DeepFit] Step 2: Normalizing keypoints...');
       const normalizedInput = normalizeKeypoints(deepfitKeypoints);
-      console.log(`[DeepFit] Normalized: length=${normalizedInput.length}`);
+      // console.log(`[DeepFit] Normalized: length=${normalizedInput.length}`);
 
       // Run DeepFit model
-      console.log('[DeepFit] Step 3: Running model...');
+      // console.log('[DeepFit] Step 3: Running model...');
       const deepfitOutputs = pluginDeepFit.model!.runSync([normalizedInput]);
       const exerciseProbs = deepfitOutputs[0] as Float32Array;
-      console.log(`[DeepFit] Probs length: ${exerciseProbs.length}`);
+      // console.log(`[DeepFit] Probs length: ${exerciseProbs.length}`);
 
       // Get exercise name and probabilities
-      console.log('[DeepFit] Step 4: Getting exercise name...');
-      const exerciseName = getExerciseName(exerciseProbs);
-      console.log(`[DeepFit] Exercise: ${exerciseName}`);
+      // console.log('[DeepFit] Step 4: Getting exercise name...');
+      const detectedExercise = getExerciseName(exerciseProbs);
+      console.log(`[DeepFit] Exercise: ${detectedExercise}`);
+      setExerciseName(detectedExercise);
 
       const probabilities = getExerciseProbabilities(exerciseProbs);
 
       // Update exercise state for rep counting
-      console.log('[DeepFit] Step 5: Updating state...');
-      const newState = updateExerciseState(exerciseName, exerciseState, points);
-      console.log(`[DeepFit] State: reps=${newState.count}, form=${newState.form}`);
+      // console.log('[DeepFit] Step 5: Updating state...');
+      const newState = updateExerciseState(detectedExercise, exerciseState, points);
+      // console.log(`[DeepFit] State: reps=${newState.count}, form=${newState.form}`);
 
       // Log results
       if (frameCount % 30 === 0) {
-        console.log('\n=== DEEPFIT EXERCISE CLASSIFICATION ===');
-        console.log(`Exercise: ${exerciseName}`);
-        console.log(`Reps: ${Math.floor(newState.count)}`);
-        console.log(`Form: ${newState.form === 1 ? 'Good' : 'Bad'}`);
-        console.log(`Feedback: ${newState.feedback}`);
-        console.log(`Completion: ${newState.percentage.toFixed(1)}%`);
-        console.log('Probabilities:', probabilities);
-        console.log('======================================\n');
+        // console.log('\n=== DEEPFIT EXERCISE CLASSIFICATION ===');
+        // console.log(`Exercise: ${detectedExercise}`);
+        // console.log(`Reps: ${Math.floor(newState.count)}`);
+        // console.log(`Form: ${newState.form === 1 ? 'Good' : 'Bad'}`);
+        // console.log(`Feedback: ${newState.feedback}`);
+        // console.log(`Completion: ${newState.percentage.toFixed(1)}%`);
+        // console.log('Probabilities:', probabilities);
+        // console.log('======================================\n');
       }
 
       // Update state
       setExerciseState(newState);
-      console.log('[DeepFit] ✓ Success!');
+      // console.log('[DeepFit] ✓ Success!');
     } catch (error) {
       console.error('[DeepFit] ✗ ERROR!');
       console.error('[DeepFit] Error:', error);
@@ -163,23 +165,23 @@ function App() {
   useEffect(() => {
     const loadModel = async (modelAsset: any, setPlugin: (plugin: { model: TensorflowModel | null }) => void, modelName: string) => {
       try {
-        console.log(`Loading ${modelName} TFLite model...`);
+        // console.log(`Loading ${modelName} TFLite model...`);
         const model = await loadTensorflowModel(
           modelAsset,
           'nnapi' // Android Neural Networks API - good balance of performance and compatibility
         )
-        console.log(`${modelName} model loaded successfully!`);
+        // console.log(`${modelName} model loaded successfully!`);
         setPlugin({ model })
 
         if (model == null) {
           console.error(`${modelName} model is null after loading`);
           return;
         }
-        console.log(
-          `${modelName} Model: ${model.inputs.map(tensorToString)} -> ${model.outputs.map(
-            tensorToString,
-          )}`,
-        );
+        // console.log(
+        //   `${modelName} Model: ${model.inputs.map(tensorToString)} -> ${model.outputs.map(
+        //     tensorToString,
+        //   )}`,
+        // );
       } catch (error) {
         console.error(`Failed to load ${modelName} TFLite model:`, error);
       }
@@ -196,9 +198,9 @@ function App() {
   const inputWidth = inputTensor?.shape[1] ?? 0;
   const inputHeight = inputTensor?.shape[2] ?? 0;
   if (inputTensor != null) {
-    console.log(
-      `Input: ${inputTensor.dataType} ${inputWidth} x ${inputHeight}`,
-    );
+    // console.log(
+    //   `Input: ${inputTensor.dataType} ${inputWidth} x ${inputHeight}`,
+    // );
   }
 
   // to get from px -> dp since we draw in the camera coordinate system
@@ -206,19 +208,19 @@ function App() {
 
   // const frameProcessor = useFrameProcessor((frame) => {
   //   'worklet'
-  //   console.log(`Frame 345: ${frame.width}x${frame.height} (${frame.pixelFormat})`)
+  // console.log(`Frame 345: ${frame.width}x${frame.height} (${frame.pixelFormat})`)
   // }, [])
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet'
 
-    runAtTargetFps(30, () => {
+    runAtTargetFps(4, () => {
       'worklet'
       try {
         const now = Date.now();
         const diff = now - lastFrameTime.value;
         if (diff > 0) {
           const fps = 1000 / diff;
-          console.log(`FPS: ${fps.toFixed(1)}`);
+          // console.log(`FPS: ${fps.toFixed(1)}`);
         }
         lastFrameTime.value = now;
 
@@ -226,7 +228,7 @@ function App() {
 
         globalFrameCounter++;
         globalFrameCounter++;
-        console.log(`FrameCounter: ${globalFrameCounter}`);
+        // console.log(`FrameCounter: ${globalFrameCounter}`);
 
         // Чередуем модели для лучшей производительности
         // console.log(`Frame: ${frameCounter.value}, Plugin1: ${plugin.model != null}, Plugin2: ${plugin2.model != null}`);
@@ -249,23 +251,45 @@ function App() {
             });
 
             if (globalFrameCounter % 60 === 0) {
-              console.log(`Pose Model Signature: Inputs: ${plugin.model.inputs.map(t => `${t.dataType}[${t.shape}]`)} Outputs: ${plugin.model.outputs.map(t => `${t.dataType}[${t.shape}]`)}`);
+              // console.log(`Pose Model Signature: Inputs: ${plugin.model.inputs.map(t => `${t.dataType}[${t.shape}]`)} Outputs: ${plugin.model.outputs.map(t => `${t.dataType}[${t.shape}]`)}`);
             }
-            console.log('Running Pose Detection');
+            // console.log('Running Pose Detection');
             const outputs = plugin.model.runSync([resized]);
             const output = outputs[0];
-            console.log(`Output type: ${typeof output}`);
+            // console.log(`Output type: ${typeof output}`);
             if (Array.isArray(output) || ArrayBuffer.isView(output)) {
-              console.log(`Output length: ${output.length}`);
-              console.log(`First 5 elements: ${output.slice(0, 5)}`);
+              // console.log(`Output length: ${output.length}`);
+              // console.log(`First 5 elements: ${output.slice(0, 5)}`);
             } else {
-              console.log(`Output keys: ${Object.keys(output)}`);
+              // console.log(`Output keys: ${Object.keys(output)}`);
             }
 
 
             // Parse keypoints from output (format: [y, x, confidence] for each point)
             const numPoints = output.length / 3;
             const points: Keypoint[] = [];
+
+            // MoveNet 17 keypoint labels
+            const keypointLabels = [
+              'Nose',           // 0
+              'Left Eye',       // 1
+              'Right Eye',      // 2
+              'Left Ear',       // 3
+              'Right Ear',      // 4
+              'Left Shoulder',  // 5
+              'Right Shoulder', // 6
+              'Left Elbow',     // 7
+              'Right Elbow',    // 8
+              'Left Wrist',     // 9
+              'Right Wrist',    // 10
+              'Left Hip',       // 11
+              'Right Hip',      // 12
+              'Left Knee',      // 13
+              'Right Knee',     // 14
+              'Left Ankle',     // 15
+              'Right Ankle'     // 16
+            ];
+
             for (let i = 0; i < numPoints; i++) {
               const y = parseFloat(String(output[i * 3]));
               const x = parseFloat(String(output[i * 3 + 1]));
@@ -276,8 +300,17 @@ function App() {
                 confidence: confidence
               });
             }
-            console.log(`Parsed ${points.length} points, first point:`, points[0]);
-            updateKeypoints(points);
+            // console.log(`Parsed ${points.length} points, first point:`, points[0]);
+
+            // Map to 17 points with labels for display
+            const mappedPoints = points.slice(0, 17).map((point, index) => ({
+              x: point.x,
+              y: point.y,
+              confidence: point.confidence,
+              label: keypointLabels[index] || `Point ${index}`
+            }));
+
+            updateKeypoints(mappedPoints);
 
             // DeepFit Exercise Classification
             // Support both MediaPipe (33 points) and MoveNet (17 points)
@@ -285,17 +318,17 @@ function App() {
               runDeepFitClassification(points, globalFrameCounter);
             }
           } else {
-            console.log('Pose model is not loaded');
+            // console.log('Pose model is not loaded');
           }
         } else {
           // Нечетные кадры - hand detection
           if (plugin2.model != null) {
             const inputTensor = plugin2.model.inputs[0];
-            console.log('Hand Input Tensor Type: ' + inputTensor);
+            // console.log('Hand Input Tensor Type: ' + inputTensor);
             const width = inputTensor.shape[1] ?? 224;
             const height = inputTensor.shape[2] ?? 224;
             const dataType = inputTensor.dataType === 'float32' ? 'float32' : 'uint8';
-            console.log('Hand Input Tensor Typ8e: ' + dataType + inputTensor.dataType + ' ' + inputTensor.shape[1]);
+            // console.log('Hand Input Tensor Typ8e: ' + dataType + inputTensor.dataType + ' ' + inputTensor.shape[1]);
 
             const resized = resize(frame, {
               scale: {
@@ -308,9 +341,9 @@ function App() {
             });
 
             if (globalFrameCounter % 60 === 1) {
-              console.log(`Hand Model Signature: Inputs: ${plugin2.model.inputs.map(t => `${t.dataType}[${t.shape}]`)} Outputs: ${plugin2.model.outputs.map(t => `${t.dataType}[${t.shape}]`)}`);
+              // console.log(`Hand Model Signature: Inputs: ${plugin2.model.inputs.map(t => `${t.dataType}[${t.shape}]`)} Outputs: ${plugin2.model.outputs.map(t => `${t.dataType}[${t.shape}]`)}`);
             }
-            console.log('Running Hand Detection');
+            // console.log('Running Hand Detection');
             const outputs2 = plugin2.model.runSync([resized]);
             const output = outputs2[0];
 
@@ -322,6 +355,32 @@ function App() {
 
             const numPoints = output.length / 3;
             const points = [];
+
+            // Hand landmark labels (21 points)
+            const handLabels = [
+              'Wrist',           // 0
+              'Thumb CMC',       // 1
+              'Thumb MCP',       // 2
+              'Thumb IP',        // 3
+              'Thumb Tip',       // 4
+              'Index MCP',       // 5
+              'Index PIP',       // 6
+              'Index DIP',       // 7
+              'Index Tip',       // 8
+              'Middle MCP',      // 9
+              'Middle PIP',      // 10
+              'Middle DIP',      // 11
+              'Middle Tip',      // 12
+              'Ring MCP',        // 13
+              'Ring PIP',        // 14
+              'Ring DIP',        // 15
+              'Ring Tip',        // 16
+              'Pinky MCP',       // 17
+              'Pinky PIP',       // 18
+              'Pinky DIP',       // 19
+              'Pinky Tip'        // 20
+            ];
+
             let max = 0;
             for (let i = 0; i < numPoints; i++) {
               const y = parseFloat(String(output[i * 3])) / height;
@@ -330,17 +389,18 @@ function App() {
               points.push({
                 y: y,
                 x: x,
-                confidence: confidence
+                confidence: confidence,
+                label: handLabels[i] || `Hand Point ${i}`
               });
               max = Math.max(max, x);
               max = Math.max(max, y);
             }
-            console.log('max', max);
-            console.log(`Parsed ${points.length} points, first point:`, points[0]);
+            // console.log('max', max);
+            // console.log(`Parsed ${points.length} points, first point:`, points[0]);
             updateKeypoints(points);
-            console.log('update Hand Keypoints:', JSON.stringify(points, null, 2));
+            // console.log('update Hand Keypoints:', JSON.stringify(points, null, 2));
           } else {
-            console.log('Hand model is not loaded');
+            // console.log('Hand model is not loaded');
           }
         }
       } catch (error) {
@@ -416,9 +476,9 @@ function App() {
   //   const output = outputs[0];
   //   const frameWidth = frame.width;
   //   const frameHeight = frame.height;
-  //   // console.log(`${frameWidth}x${frameHeight}`);
-  //   // console.log(`${inputWidth}x${inputHeight}`)
-  //   // console.log(output)
+  // console.log(`${frameWidth}x${frameHeight}`);
+  // console.log(`${inputWidth}x${inputHeight}`)
+  // console.log(output)
 
   //   const rect = Skia.XYWHRect(0, 0, frameWidth, frameHeight);
   //   // frame.drawRect(rect, fillPaint);
@@ -472,22 +532,45 @@ function App() {
         frameProcessor={frameProcessor}
       />
       <Svg style={StyleSheet.absoluteFill}>
+        {/* Exercise name at top center */}
+        <Text
+          x={screenWidth / 2}
+          y={50}
+          fill="white"
+          fontSize="24"
+          fontWeight="bold"
+          stroke="black"
+          strokeWidth="1"
+          textAnchor="middle"
+        >
+          {exerciseName ? exerciseName.toUpperCase().replace(/_/g, ' ') : 'NO EXERCISE DETECTED'}
+        </Text>
         {keypoints.map((point, index) => {
           if (point.confidence > 0.0005 || 1) {
             return (
-              <Circle
-                key={index}
-                cx={point.x * screenWidth}
-                cy={(1 - point.y) * screenHeight}
-                // cx={(1 - point.x) * screenWidth}
-                // cy={(1 - point.y) * screenWidth}
-                // cx={(point.x)}
-                // cy={(point.y)}
-                r={8}
-                stroke="red"
-                strokeWidth="2"
-                fill={`rgba(255, 0, 0, ${point.confidence})`}
-              />
+              <>
+                <Circle
+                  key={`circle-${index}`}
+                  cx={point.x * screenWidth}
+                  cy={(1 - point.y) * screenHeight}
+                  r={8}
+                  stroke="red"
+                  strokeWidth="2"
+                  fill={`rgba(255, 0, 0, ${point.confidence})`}
+                />
+                <Text
+                  key={`text-${index}`}
+                  x={point.x * screenWidth + 12}
+                  y={(1 - point.y) * screenHeight - 5}
+                  fill="white"
+                  fontSize="12"
+                  fontWeight="bold"
+                  stroke="black"
+                  strokeWidth="0.5"
+                >
+                  {point.label}
+                </Text>
+              </>
             );
           }
           return null;

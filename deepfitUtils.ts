@@ -222,18 +222,17 @@ export function normalizeKeypoints(keypoints: Keypoint[]): Float32Array {
     const centerX = count > 0 ? sumX / count : 0;
     const centerY = count > 0 ? sumY / count : 0;
 
-    // Normalize coordinates relative to body length and center of gravity
+    // Normalize coordinates and create INTERLEAVED format: [x0, y0, x1, y1, x2, y2, ...]
+    // This matches the original Python implementation in DeepFit
     const normalized = new Float32Array(36);
 
     for (let i = 0; i < 18; i++) {
         const kp = keypoints[i];
         const isValid = kp.x > 0 || kp.y > 0;
 
-        // First 18 values are normalized X coordinates
-        normalized[i] = isValid ? (kp.x - centerX) / lengthBody : 0;
-
-        // Next 18 values are normalized Y coordinates
-        normalized[i + 18] = isValid ? (kp.y - centerY) / lengthBody : 0;
+        // Interleaved format: x and y coordinates alternate
+        normalized[i * 2] = isValid ? (kp.x - centerX) / lengthBody : 0;      // X coordinate
+        normalized[i * 2 + 1] = isValid ? (kp.y - centerY) / lengthBody : 0;  // Y coordinate
     }
 
     return normalized;
@@ -262,6 +261,7 @@ export function getExerciseName(modelOutput: Float32Array | number[]): string {
     let maxIndex = 0;
     let maxValue = modelOutput[0];
 
+    // Find the exercise with the highest probability
     for (let i = 1; i < modelOutput.length; i++) {
         if (modelOutput[i] > maxValue) {
             maxValue = modelOutput[i];
@@ -269,6 +269,7 @@ export function getExerciseName(modelOutput: Float32Array | number[]): string {
         }
     }
 
+    console.log(`[DeepFit] Detected: ${EXERCISE_LABELS[maxIndex]} (confidence: ${maxValue.toFixed(4)})`);
     return EXERCISE_LABELS[maxIndex];
 }
 
