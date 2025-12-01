@@ -32,6 +32,7 @@ import {
 import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
 import HandCameraDemo from './nativeTasksHand';
 import PoseCameraDemo from './nativeTasksPoseFull';
+import TestComparison from './TestComparison';
 
 let globalFrameCounter = 0;
 
@@ -525,7 +526,7 @@ function App() {
     <View style={StyleSheet.absoluteFill}>
 
       {/* <HandCameraDemo /> */}
-      <PoseCameraDemo />
+      <TestComparison />
     </View>
   )
 }

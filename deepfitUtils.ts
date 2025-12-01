@@ -146,56 +146,84 @@ function euclideanDistance(a: Keypoint, b: Keypoint): number {
 }
 
 /**
- * Normalize keypoints relative to body length and center of gravity
- * This matches the Python norm_X function from DeepFit
+ * Normalize keypoints to match Python DeepFit implementation
+ * Input: 18 keypoints with PIXEL coordinates
+ * Output: Float32Array(36) in INTERLEAVED format after normalization
+ * 
+ * This function creates BLOCKED format input [x0...x17, y0...y17] and then
+ * applies the norm_X logic from Python which outputs INTERLEAVED format.
  */
 export function normalizeKeypoints(keypoints: Keypoint[]): Float32Array {
     if (keypoints.length !== 18) {
         throw new Error(`Expected 18 keypoints, got ${keypoints.length}`);
     }
 
-    // Extract individual keypoints
-    const Nose = keypoints[0];
-    const Neck = keypoints[1];
-    const RShoulder = keypoints[2];
-    const RElbow = keypoints[3];
-    const RWrist = keypoints[4];
-    const LShoulder = keypoints[5];
-    const LElbow = keypoints[6];
-    const LWrist = keypoints[7];
-    const RHip = keypoints[8];
-    const RKnee = keypoints[9];
-    const RAnkle = keypoints[10];
-    const LHip = keypoints[11];
-    const LKnee = keypoints[12];
-    const LAnkle = keypoints[13];
-    const REye = keypoints[14];
-    const LEye = keypoints[15];
-    const REar = keypoints[16];
-    const LEar = keypoints[17];
+    // Create BLOCKED format: first all X coordinates, then all Y coordinates
+    // This matches convert_mediapipe_keypoints_for_model in Python
+    const blocked = new Float32Array(36);
+
+    // First 18 elements: X coordinates in pixels
+    for (let i = 0; i < 18; i++) {
+        blocked[i] = keypoints[i].x;
+    }
+
+    // Last 18 elements: Y coordinates in pixels  
+    for (let i = 0; i < 18; i++) {
+        blocked[18 + i] = keypoints[i].y;
+    }
+
+    // Now apply the norm_X logic from Python
+    return normX(blocked);
+}
+
+/**
+ * Port of Python norm_X function from DeepFitClassifier.py
+ * Expects BLOCKED input: [x0, x1, ..., x17, y0, y1, ..., y17]
+ * Returns INTERLEAVED output: [x0_norm, y0_norm, x1_norm, y1_norm, ...]
+ */
+function normX(X: Float32Array): Float32Array {
+    // Extract keypoints from blocked format for distance calculations
+    const keypoints: Array<{ x: number, y: number }> = [];
+    for (let i = 0; i < 18; i++) {
+        keypoints.push({
+            x: X[i],      // First 18 are X coords
+            y: X[18 + i]  // Last 18 are Y coords
+        });
+    }
+
+    // Helper function for euclidean distance (matches Python euclidean_dist)
+    const euclideanDist = (a: { x: number, y: number }, b: { x: number, y: number }): number => {
+        // If either point is at origin (0,0), return 0
+        if ((a.x === 0 && a.y === 0) || (b.x === 0 && b.y === 0)) {
+            return 0;
+        }
+        return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+    };
 
     // Calculate head length (max of various head measurements)
-    const headLengths = [
-        euclideanDistance(Neck, LEar),
-        euclideanDistance(Neck, REar),
-        euclideanDistance(Neck, LEye),
-        euclideanDistance(Neck, REye),
-        euclideanDistance(Nose, LEar),
-        euclideanDistance(Nose, REar),
-        euclideanDistance(Nose, LEye),
-        euclideanDistance(Nose, REye)
-    ];
-    const lengthHead = Math.max(...headLengths);
+    // Indices: 0=Nose, 1=Neck, 14=REye, 15=LEye, 16=REar, 17=LEar
+    const lengthHead = Math.max(
+        euclideanDist(keypoints[1], keypoints[17]),  // Neck to LEar
+        euclideanDist(keypoints[1], keypoints[16]),  // Neck to REar
+        euclideanDist(keypoints[1], keypoints[15]),  // Neck to LEye
+        euclideanDist(keypoints[1], keypoints[14]),  // Neck to REye
+        euclideanDist(keypoints[0], keypoints[17]),  // Nose to LEar
+        euclideanDist(keypoints[0], keypoints[16]),  // Nose to REar
+        euclideanDist(keypoints[0], keypoints[15]),  // Nose to LEye
+        euclideanDist(keypoints[0], keypoints[14])   // Nose to REye
+    );
 
     // Calculate torso length
+    // Indices: 1=Neck, 8=RHip, 11=LHip
     const lengthTorso = Math.max(
-        euclideanDistance(Neck, LHip),
-        euclideanDistance(Neck, RHip)
+        euclideanDist(keypoints[1], keypoints[11]),  // Neck to LHip
+        euclideanDist(keypoints[1], keypoints[8])    // Neck to RHip
     );
 
     // Calculate leg lengths
-    const lengthLegRight = euclideanDistance(RHip, RKnee) + euclideanDistance(RKnee, RAnkle);
-    const lengthLegLeft = euclideanDistance(LHip, LKnee) + euclideanDistance(LKnee, LAnkle);
+    // Indices: 8=RHip, 9=RKnee, 10=RAnkle, 11=LHip, 12=LKnee, 13=LAnkle
+    const lengthLegRight = euclideanDist(keypoints[8], keypoints[9]) + euclideanDist(keypoints[9], keypoints[10]);
+    const lengthLegLeft = euclideanDist(keypoints[11], keypoints[12]) + euclideanDist(keypoints[12], keypoints[13]);
     const lengthLeg = Math.max(lengthLegRight, lengthLegLeft);
 
     // Total body length
@@ -207,32 +235,28 @@ export function normalizeKeypoints(keypoints: Keypoint[]): Float32Array {
     }
 
     // Calculate center of gravity
-    let sumX = 0;
-    let sumY = 0;
-    let count = 0;
-
-    for (const kp of keypoints) {
-        if (kp.x > 0 || kp.y > 0) {
-            sumX += kp.x;
-            sumY += kp.y;
+    let sumX = 0, sumY = 0, count = 0;
+    for (let i = 0; i < 18; i++) {
+        if (X[i] > 0 || X[18 + i] > 0) {
+            sumX += X[i];
+            sumY += X[18 + i];
             count++;
         }
     }
-
     const centerX = count > 0 ? sumX / count : 0;
     const centerY = count > 0 ? sumY / count : 0;
 
-    // Normalize coordinates and create INTERLEAVED format: [x0, y0, x1, y1, x2, y2, ...]
-    // This matches the original Python implementation in DeepFit
+    // Normalize and create INTERLEAVED output format
+    // This matches the Python implementation's output
     const normalized = new Float32Array(36);
-
     for (let i = 0; i < 18; i++) {
-        const kp = keypoints[i];
-        const isValid = kp.x > 0 || kp.y > 0;
+        const x = X[i];
+        const y = X[18 + i];
+        const isValid = x > 0 || y > 0;
 
-        // Interleaved format: x and y coordinates alternate
-        normalized[i * 2] = isValid ? (kp.x - centerX) / lengthBody : 0;      // X coordinate
-        normalized[i * 2 + 1] = isValid ? (kp.y - centerY) / lengthBody : 0;  // Y coordinate
+        // Interleaved: [x0_norm, y0_norm, x1_norm, y1_norm, ...]
+        normalized[i * 2] = isValid ? (x - centerX) / lengthBody : 0;
+        normalized[i * 2 + 1] = isValid ? (y - centerY) / lengthBody : 0;
     }
 
     return normalized;

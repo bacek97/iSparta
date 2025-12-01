@@ -110,10 +110,19 @@ function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmar
                 // Run DeepFit classification if model is loaded and we have landmarks
                 if (pluginDeepFit.model && event.landmarks && event.landmarks[0]) {
                     const pose = event.landmarks[0];
-                    // Convert PoseLandmark[] to Keypoint[] format expected by DeepFit
+
+                    // CRITICAL: Use camera frame dimensions to match Python's approach
+                    // MediaPipe outputs normalized 0-1 coordinates
+                    // Python multiplies by camera width/height (e.g., 640x480)
+                    // We use a typical camera resolution - this will be close enough
+                    // since the model was trained with similar aspect ratios
+                    const CAMERA_WIDTH = 640;   // Typical camera width
+                    const CAMERA_HEIGHT = 480;  // Typical camera height
+
+                    // Convert PoseLandmark[] to Keypoint[] format with camera-scaled coordinates
                     const keypoints: Keypoint[] = pose.map((landmark: PoseLandmark) => ({
-                        x: landmark.x,
-                        y: landmark.y,
+                        x: landmark.x * CAMERA_WIDTH,   // Scale by camera width
+                        y: landmark.y * CAMERA_HEIGHT,  // Scale by camera height
                         confidence: landmark.visibility
                     }));
 
