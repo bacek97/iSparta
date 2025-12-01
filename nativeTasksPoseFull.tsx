@@ -8,7 +8,17 @@ import {
     VisionCameraProxy,
 } from 'react-native-vision-camera';
 import { NativeEventEmitter, View } from 'react-native';
-import { Svg, Circle, Line } from 'react-native-svg';
+import { Svg, Circle, Line, Text as SvgText } from 'react-native-svg';
+import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
+import {
+    extractDeepFitKeypoints,
+    normalizeKeypoints,
+    getExerciseName,
+    updateExerciseState,
+    createExerciseState,
+    type Keypoint,
+    type ExerciseState
+} from './deepfitUtils';
 
 const { PoseLandmarks } = NativeModules;
 
@@ -58,8 +68,31 @@ interface PoseCameraDemoProps {
 
 function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmarker_full.task' }: PoseCameraDemoProps) {
     const [landmarks, setLandmarks] = useState<PoseLandmark[][]>([]);
-    const device = useCameraDevice('front');
+    const [pluginDeepFit, setPluginDeepFit] = useState<{ model: TensorflowModel | null }>({ model: null });
+    const [exerciseState, setExerciseState] = useState<ExerciseState>(createExerciseState());
+    const [exerciseName, setExerciseName] = useState<string>('');
+    const device = useCameraDevice('front', {
+        physicalDevices: ['ultra-wide-angle-camera']
+    });
     const { hasPermission, requestPermission } = useCameraPermission();
+
+    // Load DeepFit classifier model
+    useEffect(() => {
+        const loadModel = async () => {
+            try {
+                console.log('[PoseLandmarks] Loading DeepFit classifier...');
+                const model = await loadTensorflowModel(
+                    require('./models_tflite/deepfit_classifier_v3.tflite'),
+                    'nnapi'
+                );
+                console.log('[PoseLandmarks] DeepFit classifier loaded successfully!');
+                setPluginDeepFit({ model });
+            } catch (error) {
+                console.error('[PoseLandmarks] Failed to load DeepFit classifier:', error);
+            }
+        };
+        loadModel();
+    }, []);
 
     useEffect(() => {
         console.log('[PoseLandmarks] Setting up event listeners...');
@@ -73,6 +106,38 @@ function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmar
 
                 // Update the landmarks state to render them on the screen
                 setLandmarks(event.landmarks || []);
+
+                // Run DeepFit classification if model is loaded and we have landmarks
+                if (pluginDeepFit.model && event.landmarks && event.landmarks[0]) {
+                    const pose = event.landmarks[0];
+                    // Convert PoseLandmark[] to Keypoint[] format expected by DeepFit
+                    const keypoints: Keypoint[] = pose.map((landmark: PoseLandmark) => ({
+                        x: landmark.x,
+                        y: landmark.y,
+                        confidence: landmark.visibility
+                    }));
+
+                    try {
+                        // Extract 18 keypoints for DeepFit from 33 pose landmarks
+                        const deepfitKeypoints = extractDeepFitKeypoints(keypoints);
+                        const normalizedInput = normalizeKeypoints(deepfitKeypoints);
+
+                        // Run DeepFit model
+                        const deepfitOutputs = pluginDeepFit.model.runSync([normalizedInput]);
+                        const exerciseProbs = deepfitOutputs[0] as Float32Array;
+
+                        // Get exercise name
+                        const detectedExercise = getExerciseName(exerciseProbs);
+                        console.log(`[PoseLandmarks] Exercise: ${detectedExercise}`);
+                        setExerciseName(detectedExercise);
+
+                        // Update exercise state for rep counting
+                        const newState = updateExerciseState(detectedExercise, exerciseState, keypoints);
+                        setExerciseState(newState);
+                    } catch (error) {
+                        console.error('[PoseLandmarks] DeepFit classification error:', error);
+                    }
+                }
             },
         );
 
@@ -103,7 +168,7 @@ function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmar
             statusSubscription.remove();
             errorSubscription.remove();
         };
-    }, [modelPath]);
+    }, [modelPath, pluginDeepFit, exerciseState]);
 
     useEffect(() => {
         // Request camera permission on component mount
@@ -198,6 +263,63 @@ function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmar
                             })}
                         </React.Fragment>
                     ))}
+
+                    {/* Display exercise info */}
+                    {exerciseName && (
+                        <>
+                            <SvgText
+                                x={20}
+                                y={50}
+                                fontSize="24"
+                                fontWeight="bold"
+                                fill="white"
+                                stroke="black"
+                                strokeWidth="2"
+                            >
+                                {exerciseName}
+                            </SvgText>
+                            <SvgText
+                                x={20}
+                                y={80}
+                                fontSize="20"
+                                fill="white"
+                                stroke="black"
+                                strokeWidth="1.5"
+                            >
+                                Reps: {Math.floor(exerciseState.count)}
+                            </SvgText>
+                            <SvgText
+                                x={20}
+                                y={110}
+                                fontSize="18"
+                                fill={exerciseState.form === 1 ? "lime" : "red"}
+                                stroke="black"
+                                strokeWidth="1.5"
+                            >
+                                Form: {exerciseState.form === 1 ? 'Good' : 'Bad'}
+                            </SvgText>
+                            <SvgText
+                                x={20}
+                                y={140}
+                                fontSize="18"
+                                fill="yellow"
+                                stroke="black"
+                                strokeWidth="1.5"
+                            >
+                                {exerciseState.feedback}
+                            </SvgText>
+                            <SvgText
+                                x={20}
+                                y={170}
+                                fontSize="18"
+                                fill="cyan"
+                                stroke="black"
+                                strokeWidth="1.5"
+                            >
+                                Progress: {exerciseState.percentage.toFixed(1)}%
+                            </SvgText>
+                        </>
+                    )}
                 </Svg>
             )}
         </View>
