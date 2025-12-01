@@ -30,6 +30,7 @@ import {
 } from './deepfitUtils';
 
 import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
+import HandCameraDemo from './nativeTasks';
 
 let globalFrameCounter = 0;
 
@@ -521,61 +522,8 @@ function App() {
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={true}
-        pixelFormat="yuv"
-        // enableBufferCompression={true}
-        // videoStabilizationMode="off"
-        // fps={30}
-        frameProcessor={frameProcessor}
-      />
-      <Svg style={StyleSheet.absoluteFill}>
-        {/* Exercise name at top center */}
-        <Text
-          x={screenWidth / 2}
-          y={50}
-          fill="white"
-          fontSize="24"
-          fontWeight="bold"
-          stroke="black"
-          strokeWidth="1"
-          textAnchor="middle"
-        >
-          {exerciseName ? exerciseName.toUpperCase().replace(/_/g, ' ') : 'NO EXERCISE DETECTED'}
-        </Text>
-        {keypoints.map((point, index) => {
-          if (point.confidence > 0.0005 || 1) {
-            return (
-              <>
-                <Circle
-                  key={`circle-${index}`}
-                  cx={point.x * screenWidth}
-                  cy={(1 - point.y) * screenHeight}
-                  r={8}
-                  stroke="red"
-                  strokeWidth="2"
-                  fill={`rgba(255, 0, 0, ${point.confidence})`}
-                />
-                <Text
-                  key={`text-${index}`}
-                  x={point.x * screenWidth + 12}
-                  y={(1 - point.y) * screenHeight - 5}
-                  fill="white"
-                  fontSize="12"
-                  fontWeight="bold"
-                  stroke="black"
-                  strokeWidth="0.5"
-                >
-                  {point.label}
-                </Text>
-              </>
-            );
-          }
-          return null;
-        })}
-      </Svg>
+      
+      <HandCameraDemo />
     </View>
   )
 }

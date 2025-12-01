@@ -127,6 +127,8 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation('com.google.mediapipe:tasks-vision:0.10.29')
+    implementation('androidx.camera:camera-core:1.5.1')
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
