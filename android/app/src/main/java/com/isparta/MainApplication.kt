@@ -8,6 +8,8 @@ import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.isparta.handlandmarksframeprocessor.HandLandmarksFrameProcessorPluginPackage
 import com.isparta.HandLandmarksPackage
+import com.isparta.poselandmarksframeprocessor.PoseLandmarksFrameProcessorPluginPackage
+import com.isparta.PoseLandmarksPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -20,6 +22,8 @@ class MainApplication : Application(), ReactApplication {
           // add(MyReactNativePackage())
           add(HandLandmarksFrameProcessorPluginPackage())
           add(HandLandmarksPackage())
+          add(PoseLandmarksFrameProcessorPluginPackage())
+          add(PoseLandmarksPackage())
         },
     )
   }

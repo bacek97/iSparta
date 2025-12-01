@@ -30,7 +30,8 @@ import {
 } from './deepfitUtils';
 
 import { CameraDevice, CameraDeviceFormat } from 'react-native-vision-camera';
-import HandCameraDemo from './nativeTasks';
+import HandCameraDemo from './nativeTasksHand';
+import PoseCameraDemo from './nativeTasksPoseFull';
 
 let globalFrameCounter = 0;
 
@@ -522,8 +523,9 @@ function App() {
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      
-      <HandCameraDemo />
+
+      {/* <HandCameraDemo /> */}
+      <PoseCameraDemo />
     </View>
   )
 }
