@@ -500,8 +500,9 @@ export function updatePushupState(state: ExerciseState, angles: BodyAngles): Exe
 
     // Track full pushup motion
     if (newState.form === 1) {
-        // At the bottom position (0%)
-        if (newState.percentage <= 5) {
+        // At the bottom position (near 0%)
+        // Using <= 10 instead of <= 5 to be less strict
+        if (newState.percentage <= 10) {
             if (
                 angles.elbowLeft <= 90 &&
                 angles.elbowRight <= 90 &&
@@ -518,8 +519,9 @@ export function updatePushupState(state: ExerciseState, angles: BodyAngles): Exe
             }
         }
 
-        // At the top position (100%)
-        if (newState.percentage >= 95) {
+        // At the top position (near 100%)
+        // Using >= 90 instead of >= 95 to be less strict
+        if (newState.percentage >= 90) {
             if (
                 angles.elbowLeft > 160 &&
                 angles.elbowRight > 160 &&
@@ -565,8 +567,9 @@ export function updateSquatState(state: ExerciseState, angles: BodyAngles): Exer
 
     // Track full squat motion
     if (newState.form === 1) {
-        // At the bottom position (0%)
-        if (newState.percentage <= 5) {
+        // At the bottom position (near 0%)
+        // Using <= 10 instead of <= 5 to be less strict (Python uses == 0, but we need range for floating point)
+        if (newState.percentage <= 10) {
             if (kneeAngle < 90) {
                 newState.feedback = "Go Up";
                 if (newState.direction === 0) {
@@ -578,8 +581,9 @@ export function updateSquatState(state: ExerciseState, angles: BodyAngles): Exer
             }
         }
 
-        // At the top position (100%)
-        if (newState.percentage >= 95) {
+        // At the top position (near 100%)
+        // Using >= 90 instead of >= 95 to be less strict (Python uses == 100, but we need range for floating point)
+        if (newState.percentage >= 90) {
             if (kneeAngle > 169) {
                 newState.feedback = "Go Down";
                 if (newState.direction === 1) {

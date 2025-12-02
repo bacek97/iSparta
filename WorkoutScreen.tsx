@@ -8,7 +8,7 @@ import {
     VisionCameraProxy,
 } from 'react-native-vision-camera';
 import { NativeEventEmitter, View } from 'react-native';
-import { Svg, Circle, Line, Text as SvgText } from 'react-native-svg';
+import { Svg, Circle, Line, Text as SvgText, Rect } from 'react-native-svg';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import {
     extractDeepFitKeypoints,
@@ -87,6 +87,12 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
     const [dateInfo, setDateInfo] = useState<string>('');
     const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
     const [exerciseDuration, setExerciseDuration] = useState<number>(0);
+
+    // Exercise name debouncing buffer (similar to DeepFit's frame_queue)
+    // DeepFit uses 250 frames, we use 45 frames (~1.5 seconds at 30 FPS)
+    const [exerciseBuffer, setExerciseBuffer] = useState<string[]>([]);
+    const EXERCISE_BUFFER_SIZE = 45;
+
     const device = useCameraDevice('front', {
         physicalDevices: ['ultra-wide-angle-camera']
     });
@@ -162,18 +168,36 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                         const deepfitOutputs = pluginDeepFit.model.runSync([normalizedInput]);
                         const exerciseProbs = deepfitOutputs[0] as Float32Array;
 
-                        // Get exercise name
+                        // Get raw exercise name from model
                         const detectedExercise = getExerciseName(exerciseProbs);
-                        console.log(`[PoseLandmarks] Exercise: ${detectedExercise}`);
-                        setExerciseName(detectedExercise);
 
-                        // Update exercise state for rep counting
-                        const newState = updateExerciseState(detectedExercise, exerciseState, keypoints);
+                        // Add to buffer and get smoothed exercise name (majority voting)
+                        // This prevents flickering between exercises due to misclassification
+                        const newBuffer = [...exerciseBuffer, detectedExercise];
+                        if (newBuffer.length > EXERCISE_BUFFER_SIZE) {
+                            newBuffer.shift(); // Remove oldest
+                        }
+                        setExerciseBuffer(newBuffer);
+
+                        // Get most common exercise from buffer (like DeepFit's max(set(frame_queue), key=frame_queue.count))
+                        const exerciseCounts: Record<string, number> = {};
+                        newBuffer.forEach(ex => {
+                            exerciseCounts[ex] = (exerciseCounts[ex] || 0) + 1;
+                        });
+                        const smoothedExercise = Object.entries(exerciseCounts).reduce((a, b) =>
+                            exerciseCounts[a[0]] > exerciseCounts[b[0]] ? a : b
+                        )[0];
+
+                        console.log(`[PoseLandmarks] Raw: ${detectedExercise}, Smoothed: ${smoothedExercise} (buffer: ${newBuffer.length})`);
+                        setExerciseName(smoothedExercise);
+
+                        // Update exercise state for rep counting using smoothed exercise
+                        const newState = updateExerciseState(smoothedExercise, exerciseState, keypoints);
                         setExerciseState(newState);
 
-                        // Handle exercise change if session is active
+                        // Handle exercise change if session is active (use smoothed exercise)
                         if (sessionActive) {
-                            handleExerciseChange(detectedExercise, newState).catch(err =>
+                            handleExerciseChange(smoothedExercise, newState).catch(err =>
                                 console.error('[WorkoutScreen] Error handling exercise change:', err)
                             );
                         }
@@ -372,6 +396,58 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                             >
                                 Progress: {exerciseState.percentage.toFixed(1)}%
                             </SvgText>
+
+                            {/* Vertical Progress Bar */}
+                            {exerciseState.form === 1 && (
+                                <>
+                                    {/* Progress bar background (outline) */}
+                                    <Rect
+                                        x={screenWidth - 70}
+                                        y={50}
+                                        width={50}
+                                        height={300}
+                                        fill="none"
+                                        stroke={
+                                            exerciseName === 'squats' ? '#00ff00' :
+                                                exerciseName === 'pushups' ? '#00bfff' :
+                                                    exerciseName === 'lunges' ? '#ff6b00' :
+                                                        exerciseName === 'situps' ? '#ff00ff' :
+                                                            exerciseName === 'bicep_curls' ? '#ffff00' :
+                                                                '#00ff00'
+                                        }
+                                        strokeWidth="3"
+                                    />
+                                    {/* Progress bar fill (fills from bottom to top) */}
+                                    <Rect
+                                        x={screenWidth - 70}
+                                        y={50 + (300 * (100 - exerciseState.percentage) / 100)}
+                                        width={50}
+                                        height={300 * exerciseState.percentage / 100}
+                                        fill={
+                                            exerciseName === 'squats' ? '#00ff00' :
+                                                exerciseName === 'pushups' ? '#00bfff' :
+                                                    exerciseName === 'lunges' ? '#ff6b00' :
+                                                        exerciseName === 'situps' ? '#ff00ff' :
+                                                            exerciseName === 'bicep_curls' ? '#ffff00' :
+                                                                '#00ff00'
+                                        }
+                                        opacity={0.8}
+                                    />
+                                    {/* Percentage text on progress bar */}
+                                    <SvgText
+                                        x={screenWidth - 45}
+                                        y={370}
+                                        fontSize="20"
+                                        fontWeight="bold"
+                                        fill="white"
+                                        stroke="black"
+                                        strokeWidth="2"
+                                        textAnchor="middle"
+                                    >
+                                        {Math.round(exerciseState.percentage)}%
+                                    </SvgText>
+                                </>
+                            )}
                         </>
                     )}
                 </Svg>

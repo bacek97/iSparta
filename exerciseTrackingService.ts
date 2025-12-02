@@ -59,13 +59,17 @@ export async function handleExerciseChange(
 
     // If exercise changed, save the previous one
     if (currentExerciseName && currentExerciseName !== newExerciseName) {
-        await finishCurrentExercise(exerciseState);
-    }
-
-    // Start tracking new exercise
-    if (currentExerciseName !== newExerciseName) {
+        // Only finish if we actually have a current exercise being tracked
+        if (currentExercise) {
+            await finishCurrentExercise(exerciseState);
+        }
+        // Start tracking the new exercise
+        await startExercise(newExerciseName);
+    } else if (!currentExerciseName) {
+        // First exercise detection - start tracking
         await startExercise(newExerciseName);
     }
+    // else: same exercise, continue tracking (do nothing)
 }
 
 /**
@@ -126,8 +130,30 @@ async function finishCurrentExercise(exerciseState: ExerciseState): Promise<void
     // Calculate average form quality (simplified - using current form)
     currentExercise.formQuality = exerciseState.form;
 
-    // Add to session
-    currentSession.exercises.push(currentExercise);
+    // Validate exercise before adding to session
+    // Filter out false positives: 0 reps or duration < 30 seconds
+    const MIN_DURATION_SECONDS = 30;
+    let isValid = false;
+
+    if (config.type === 'reps') {
+        // For rep-based exercises, must have at least 1 rep
+        isValid = (currentExercise.reps !== undefined && currentExercise.reps > 0);
+        if (!isValid) {
+            console.log(`[ExerciseTracking] Skipping ${currentExercise.exerciseName}: 0 reps (false positive)`);
+        }
+    } else {
+        // For time-based exercises, must be at least 30 seconds
+        isValid = (currentExercise.durationSeconds !== undefined && currentExercise.durationSeconds >= MIN_DURATION_SECONDS);
+        if (!isValid) {
+            console.log(`[ExerciseTracking] Skipping ${currentExercise.exerciseName}: ${durationSeconds}s < ${MIN_DURATION_SECONDS}s (false positive)`);
+        }
+    }
+
+    // Only add valid exercises to session
+    if (isValid) {
+        currentSession.exercises.push(currentExercise);
+        console.log(`[ExerciseTracking] ✓ Added ${currentExercise.exerciseName} to session`);
+    }
 
     // Reset current exercise
     currentExercise = null;
