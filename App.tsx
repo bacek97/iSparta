@@ -526,7 +526,8 @@ function App() {
     <View style={StyleSheet.absoluteFill}>
 
       {/* <HandCameraDemo /> */}
-      <TestComparison />
+      <PoseCameraDemo />
+      {/* <TestComparison /> */}
     </View>
   )
 }

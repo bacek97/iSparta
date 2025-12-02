@@ -147,6 +147,8 @@ function euclideanDistance(a: Keypoint, b: Keypoint): number {
 
 /**
  * Normalize keypoints to match Python DeepFit implementation
+/**
+ * Normalize keypoints to match Python DeepFit implementation
  * Input: 18 keypoints with PIXEL coordinates
  * Output: Float32Array(36) in INTERLEAVED format after normalization
  * 
@@ -158,16 +160,16 @@ export function normalizeKeypoints(keypoints: Keypoint[]): Float32Array {
         throw new Error(`Expected 18 keypoints, got ${keypoints.length}`);
     }
 
-    // Create BLOCKED format: first all X coordinates, then all Y coordinates
-    // This matches convert_mediapipe_keypoints_for_model in Python
+    // Create BLOCKED format: [x0, x1, ..., x17, y0, y1, ..., y17]
+    // This matches Python's convert_mediapipe_keypoints_for_model output
     const blocked = new Float32Array(36);
 
-    // First 18 elements: X coordinates in pixels
+    // First 18 elements: X coordinates
     for (let i = 0; i < 18; i++) {
         blocked[i] = keypoints[i].x;
     }
 
-    // Last 18 elements: Y coordinates in pixels  
+    // Last 18 elements: Y coordinates  
     for (let i = 0; i < 18; i++) {
         blocked[18 + i] = keypoints[i].y;
     }
@@ -180,83 +182,124 @@ export function normalizeKeypoints(keypoints: Keypoint[]): Float32Array {
  * Port of Python norm_X function from DeepFitClassifier.py
  * Expects BLOCKED input: [x0, x1, ..., x17, y0, y1, ..., y17]
  * Returns INTERLEAVED output: [x0_norm, y0_norm, x1_norm, y1_norm, ...]
+ * 
+ * NOTE: Python's norm_X uses X[:, 0::2] and X[:, 1::2] slicing which extracts
+ * every other element. When applied to BLOCKED format, this creates a mixed
+ * array but somehow produces correct results. We replicate this exact behavior.
  */
 function normX(X: Float32Array): Float32Array {
-    // Extract keypoints from blocked format for distance calculations
-    const keypoints: Array<{ x: number, y: number }> = [];
-    for (let i = 0; i < 18; i++) {
-        keypoints.push({
-            x: X[i],      // First 18 are X coords
-            y: X[18 + i]  // Last 18 are Y coords
-        });
+    // Python's slicing behavior with BLOCKED input [x0,x1,...,x17,y0,y1,...,y17]:
+    // X[:, 0::2] = indices 0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34
+    //            = [x0,x2,x4,x6,x8,x10,x12,x14,x16,y0,y2,y4,y6,y8,y10,y12,y14,y16]
+    // X[:, 1::2] = indices 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35
+    //            = [x1,x3,x5,x7,x9,x11,x13,x15,x17,y1,y3,y5,y7,y9,y11,y13,y15,y17]
+
+    const evenIndices: number[] = [];
+    const oddIndices: number[] = [];
+    for (let i = 0; i < 36; i++) {
+        if (i % 2 === 0) {
+            evenIndices.push(X[i]);
+        } else {
+            oddIndices.push(X[i]);
+        }
     }
 
-    // Helper function for euclidean distance (matches Python euclidean_dist)
-    const euclideanDist = (a: { x: number, y: number }, b: { x: number, y: number }): number => {
-        // If either point is at origin (0,0), return 0
-        if ((a.x === 0 && a.y === 0) || (b.x === 0 && b.y === 0)) {
+    // Helper function for euclidean distance
+    // Python checks if a[:, 0] != 0, which in the sliced arrays means checking the first element
+    const euclideanDist = (aIdx: number, bIdx: number): number => {
+        const ax = evenIndices[aIdx];
+        const ay = oddIndices[aIdx];
+        const bx = evenIndices[bIdx];
+        const by = oddIndices[bIdx];
+
+        // Python: (a[:, 0] != 0).astype(int) checks if X coordinate is not 0
+        if (ax === 0 || bx === 0) {
             return 0;
         }
-        return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+        return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
     };
 
     // Calculate head length (max of various head measurements)
     // Indices: 0=Nose, 1=Neck, 14=REye, 15=LEye, 16=REar, 17=LEar
     const lengthHead = Math.max(
-        euclideanDist(keypoints[1], keypoints[17]),  // Neck to LEar
-        euclideanDist(keypoints[1], keypoints[16]),  // Neck to REar
-        euclideanDist(keypoints[1], keypoints[15]),  // Neck to LEye
-        euclideanDist(keypoints[1], keypoints[14]),  // Neck to REye
-        euclideanDist(keypoints[0], keypoints[17]),  // Nose to LEar
-        euclideanDist(keypoints[0], keypoints[16]),  // Nose to REar
-        euclideanDist(keypoints[0], keypoints[15]),  // Nose to LEye
-        euclideanDist(keypoints[0], keypoints[14])   // Nose to REye
+        euclideanDist(1, 17),  // Neck to LEar
+        euclideanDist(1, 16),  // Neck to REar
+        euclideanDist(1, 15),  // Neck to LEye
+        euclideanDist(1, 14),  // Neck to REye
+        euclideanDist(0, 17),  // Nose to LEar
+        euclideanDist(0, 16),  // Nose to REar
+        euclideanDist(0, 15),  // Nose to LEye
+        euclideanDist(0, 14)   // Nose to REye
     );
 
     // Calculate torso length
     // Indices: 1=Neck, 8=RHip, 11=LHip
     const lengthTorso = Math.max(
-        euclideanDist(keypoints[1], keypoints[11]),  // Neck to LHip
-        euclideanDist(keypoints[1], keypoints[8])    // Neck to RHip
+        euclideanDist(1, 11),  // Neck to LHip
+        euclideanDist(1, 8)    // Neck to RHip
     );
 
     // Calculate leg lengths
     // Indices: 8=RHip, 9=RKnee, 10=RAnkle, 11=LHip, 12=LKnee, 13=LAnkle
-    const lengthLegRight = euclideanDist(keypoints[8], keypoints[9]) + euclideanDist(keypoints[9], keypoints[10]);
-    const lengthLegLeft = euclideanDist(keypoints[11], keypoints[12]) + euclideanDist(keypoints[12], keypoints[13]);
+    const lengthLegRight = euclideanDist(8, 9) + euclideanDist(9, 10);
+    const lengthLegLeft = euclideanDist(11, 12) + euclideanDist(12, 13);
     const lengthLeg = Math.max(lengthLegRight, lengthLegLeft);
 
     // Total body length
     let lengthBody = lengthHead + lengthTorso + lengthLeg;
 
-    // Avoid division by zero
+    // Check if length_body is 0
+    const lengthChk = lengthBody > 0 ? 1 : 0;
+
+    // Set all length_body of 0 to 1 (to avoid division by 0)
     if (lengthBody === 0) {
         lengthBody = 1;
     }
 
-    // Calculate center of gravity
-    let sumX = 0, sumY = 0, count = 0;
+    // The center of gravity
+    // Python: num_pts = (X[:, 0::2] > 0).sum(1)
+    // Count how many values in evenIndices are > 0
+    let numPts = 0;
+    let sumX = 0;
+    let sumY = 0;
     for (let i = 0; i < 18; i++) {
-        if (X[i] > 0 || X[18 + i] > 0) {
-            sumX += X[i];
-            sumY += X[18 + i];
-            count++;
+        if (evenIndices[i] > 0) {
+            numPts++;
+            sumX += evenIndices[i];
+            sumY += oddIndices[i];
         }
     }
-    const centerX = count > 0 ? sumX / count : 0;
-    const centerY = count > 0 ? sumY / count : 0;
 
-    // Normalize and create INTERLEAVED output format
-    // This matches the Python implementation's output
+    const centerX = numPts > 0 ? sumX / numPts : 0;
+    const centerY = numPts > 0 ? sumY / numPts : 0;
+
+    // The coordinates are normalized relative to the length of the body and the center of gravity
+    const xsNorm: number[] = [];
+    const ysNorm: number[] = [];
+    for (let i = 0; i < 18; i++) {
+        xsNorm.push((evenIndices[i] - centerX) / lengthBody);
+        ysNorm.push((oddIndices[i] - centerY) / lengthBody);
+    }
+
+    // Create interleaved output
+    // Python: X_norm = np.column_stack((X_norm_x[:, :1], X_norm_y[:, :1]))
+    //         for i in range(1, X.shape[1] // 2):
+    //             X_norm = np.column_stack((X_norm, X_norm_x[:, i:i+1], X_norm_y[:, i:i+1]))
     const normalized = new Float32Array(36);
     for (let i = 0; i < 18; i++) {
-        const x = X[i];
-        const y = X[18 + i];
-        const isValid = x > 0 || y > 0;
+        normalized[i * 2] = xsNorm[i];
+        normalized[i * 2 + 1] = ysNorm[i];
+    }
 
-        // Interleaved: [x0_norm, y0_norm, x1_norm, y1_norm, ...]
-        normalized[i * 2] = isValid ? (x - centerX) / lengthBody : 0;
-        normalized[i * 2 + 1] = isValid ? (y - centerY) / lengthBody : 0;
+    // Set all samples have length_body of 0 to origin (0, 0)
+    // Python: X_norm = X_norm * chk
+    // Also check keypoints at origin: keypoints_chk = (X > 0).astype(int)
+    for (let i = 0; i < 18; i++) {
+        const keypointChk = (evenIndices[i] > 0 || oddIndices[i] > 0) ? 1 : 0;
+        const chk = lengthChk * keypointChk;
+        normalized[i * 2] *= chk;
+        normalized[i * 2 + 1] *= chk;
     }
 
     return normalized;

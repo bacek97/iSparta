@@ -118,8 +118,8 @@ export default function TestComparison() {
                         // but I should really get the dimensions.
                         // I'll add a TODO to update Kotlin if needed.
 
-                        const width = 1080; // Approximate, or maybe I should check one image size.
-                        const height = 1920; // Most phone screenshots are this.
+                        // const width = 1080; // Approximate, or maybe I should check one image size.
+                        // const height = 1920; // Most phone screenshots are this.
                         // The files are named G965F... which is a Galaxy S9+. Resolution is likely 1440 x 2960 or similar.
                         // Let's check the Python output for image size if I can.
                         // I'll use 1000x1000 for now to keep it neutral? No, aspect ratio matters.
@@ -132,8 +132,16 @@ export default function TestComparison() {
                         // I didn't run it yet.
 
                         // I'll use 1080x1920 as a guess for vertical screenshots.
-                        const IMG_WIDTH = 1080;
-                        const IMG_HEIGHT = 1920;
+                        const { width, height } = event;
+                        if (!width || !height) {
+                            logResult(imageName, { error: 'Image dimensions missing in event' });
+                            subscription.remove();
+                            resolve();
+                            return;
+                        }
+
+                        const IMG_WIDTH = width;
+                        const IMG_HEIGHT = height;
 
                         const keypoints: Keypoint[] = landmarks.map((l: any) => ({
                             x: l.x * IMG_WIDTH,

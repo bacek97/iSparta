@@ -214,7 +214,17 @@ function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmar
     const screenWidth = Dimensions.get('window').width;
     const screenHeight = Dimensions.get('window').height;
 
+    // Select 640x480 format to match DeepFit training data
+    const selectedFormat = device.formats.find(
+        (f) => f.videoWidth === 640 && f.videoHeight === 480
+    ) || device.formats[0];
+
     console.log('[PoseLandmarks] Rendering camera with device:', device.id);
+    console.log('[PoseLandmarks] Selected camera format:', {
+        width: selectedFormat.videoWidth,
+        height: selectedFormat.videoHeight,
+        fps: selectedFormat.maxFps
+    });
     console.log('[PoseLandmarks] Current landmarks count:', landmarks.length);
 
     return (
@@ -225,6 +235,7 @@ function PoseCameraDemo({ modelPath = 'models_tflite/mediapipe/full/pose_landmar
                 isActive={true}
                 frameProcessor={frameProcessor}
                 pixelFormat={pixelFormat}
+                format={selectedFormat}
             />
             {landmarks.length > 0 && (
                 <Svg style={StyleSheet.absoluteFill}>

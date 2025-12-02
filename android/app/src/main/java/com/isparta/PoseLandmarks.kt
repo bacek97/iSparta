@@ -159,6 +159,8 @@ class PoseLandmarks(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val params = Arguments.createMap()
             params.putArray("landmarks", landmarksArray)
             params.putString("imagePath", imagePath)
+            params.putInt("width", bitmap.width)
+            params.putInt("height", bitmap.height)
             
             // Send the landmarks data back to JavaScript
             sendEvent("onPoseLandmarksDetected", params)
