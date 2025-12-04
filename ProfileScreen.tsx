@@ -8,10 +8,10 @@ import {
     Alert,
     Dimensions,
 } from 'react-native';
-import { loadUserProfile, loadWorkoutSessions, getStorageInfo } from './storageService';
+import { loadUserProfile, loadWorkoutSessions, getStorageInfo, clearAllData, createDefaultProfile } from './storageService';
 import { getCurrentWeekStats, getNRAHistory } from './nraCalculationService';
 import { getVirtualDate, getDateInfo } from './testingUtils';
-import { UserProfile, WeeklyStats, WorkoutSession } from './types';
+import { UserProfile, WeeklyStats, WorkoutSession, getExerciseConfig } from './types';
 
 interface ProfileScreenProps {
     onNavigateToLeaderboard?: () => void;
@@ -62,6 +62,37 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleClearData = () => {
+        Alert.alert(
+            'Очистить статистику',
+            'Вы уверены? Это действие удалит все ваши тренировки и прогресс безвозвратно.',
+            [
+                {
+                    text: 'Отмена',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Удалить',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            await clearAllData();
+                            await createDefaultProfile();
+                            await loadData();
+                            Alert.alert('Успешно', 'Вся статистика была очищена.');
+                        } catch (error) {
+                            console.error('Error clearing data:', error);
+                            Alert.alert('Ошибка', 'Не удалось очистить данные.');
+                        } finally {
+                            setLoading(false);
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     useEffect(() => {
@@ -220,9 +251,21 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
                                     {Math.floor(session.totalDurationSeconds / 60)} мин
                                 </Text>
                             </View>
-                            <Text style={styles.sessionExercises}>
-                                {session.exercises.length} упражнений • {session.dominantMuscleGroup}
-                            </Text>
+                            <View style={{ marginTop: 4 }}>
+                                {session.exercises.map((exercise, idx) => {
+                                    const config = getExerciseConfig(exercise.exerciseName);
+                                    const displayName = config ? config.displayName : exercise.exerciseName;
+                                    const details = [];
+                                    if (exercise.reps) details.push(`${exercise.reps} повт.`);
+                                    if (exercise.durationSeconds) details.push(`${Math.round(exercise.durationSeconds)} сек.`);
+
+                                    return (
+                                        <Text key={idx} style={styles.sessionExercises}>
+                                            • {displayName}: {details.join(' + ')}
+                                        </Text>
+                                    );
+                                })}
+                            </View>
                         </View>
                     ))
                 )}
@@ -249,6 +292,15 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
                     onPress={loadData}
                 >
                     <Text style={styles.navButtonText}>🔄 Обновить</Text>
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.dangerZone}>
+                <TouchableOpacity
+                    style={[styles.navButton, styles.navButtonDanger]}
+                    onPress={handleClearData}
+                >
+                    <Text style={styles.navButtonText}>🗑️ Очистить статистику</Text>
                 </TouchableOpacity>
             </View>
 
@@ -480,6 +532,14 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    dangerZone: {
+        padding: 10,
+        marginTop: 20,
+        marginBottom: 20,
+    },
+    navButtonDanger: {
+        backgroundColor: '#dc3545',
     },
 });
 

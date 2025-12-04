@@ -2,6 +2,7 @@
  * DeepFit Utilities
  * Converts MediaPipe 33 landmarks OR MoveNet 17 landmarks to DeepFit 18 keypoints format
  */
+import { EXERCISES, QueueItem } from "./types";
 
 // Mapping from MediaPipe (33 points) to DeepFit (18 points)
 // Based on DeepFit's lm_dict: {0:0, 1:10, 2:12, 3:14, 4:16, 5:11, 6:13, 7:15, 8:24, 9:26, 10:28, 11:23, 12:25, 13:27, 14:5, 15:2, 16:8, 17:7}
@@ -308,50 +309,58 @@ function normX(X: Float32Array): Float32Array {
 /**
  * Exercise labels (must match DeepFit training order)
  */
-export const EXERCISE_LABELS = [
-    'squats',
-    'lunges',
-    'bicep_curls',
-    'situps',
-    'pushups',
-    'tricep_extensions',
-    'dumbbell_rows',
-    'jumping_jacks',
-    'dumbbell_shoulder_press',
-    'lateral_shoulder_raises'
-];
+// export const EXERCISE_LABELS = [
+//     'squats',
+//     'lunges',
+//     'bicep_curls',
+//     'situps',
+//     'pushups',
+//     'tricep_extensions',
+//     'dumbbell_rows',
+//     'jumping_jacks',
+//     'dumbbell_shoulder_press',
+//     'lateral_shoulder_raises',
+//     'Unknown'
+// ];
+
+
 
 /**
  * Get exercise name from model output
+ * Returns both name and maxValue for better exercise identification
  */
-export function getExerciseName(modelOutput: Float32Array | number[]): string {
-    let maxIndex = 0;
-    let maxValue = modelOutput[0];
 
-    // Find the exercise with the highest probability
-    for (let i = 1; i < modelOutput.length; i++) {
-        if (modelOutput[i] > maxValue) {
-            maxValue = modelOutput[i];
-            maxIndex = i;
+
+export function getExerciseNameAndConfidence(modelOutput: Float32Array | number[]): QueueItem {
+    let item: QueueItem = { name: EXERCISES.UNKNOWN, confidence: 0 };
+    let maxConfidence = 0;
+    let i = 0;
+    for (const exercise of Object.values(EXERCISES)) {
+        if (modelOutput[i] > maxConfidence) {
+            maxConfidence = modelOutput[i];
+            item = {
+                name: exercise,
+                confidence: maxConfidence
+            };
         }
+        i++;
     }
 
-    console.log(`[DeepFit] Detected: ${EXERCISE_LABELS[maxIndex]} (confidence: ${maxValue.toFixed(4)})`);
-    return EXERCISE_LABELS[maxIndex];
+    return item;
 }
 
 /**
  * Get all exercise probabilities
  */
-export function getExerciseProbabilities(modelOutput: Float32Array | number[]): Record<string, number> {
-    const result: Record<string, number> = {};
+// export function getExerciseProbabilities(modelOutput: Float32Array | number[]): Record<string, number> {
+//     const result: Record<string, number> = {};
 
-    for (let i = 0; i < EXERCISE_LABELS.length && i < modelOutput.length; i++) {
-        result[EXERCISE_LABELS[i]] = modelOutput[i];
-    }
+//     for (let i = 0; i < EXERCISE_LABELS.length && i < modelOutput.length; i++) {
+//         result[EXERCISE_LABELS[i]] = modelOutput[i];
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
 /**
  * Calculate angle between three points (in degrees)
@@ -616,31 +625,46 @@ export function createExerciseState(): ExerciseState {
 
 /**
  * Update exercise state based on detected exercise type
+ * Now works with a Map to preserve state for each exercise independently
  * @param exerciseName Name of the exercise (from model output)
- * @param state Current exercise state
+ * @param stateMap Map of exercise names to their states
  * @param landmarks MediaPipe landmarks (33 points)
- * @returns Updated exercise state
+ * @returns Updated state map
  */
 export function updateExerciseState(
     exerciseName: string,
-    state: ExerciseState,
+    stateMap: Map<string, ExerciseState>,
     landmarks: Keypoint[]
-): ExerciseState {
+): Map<string, ExerciseState> {
     const angles = calculateBodyAngles(landmarks);
+
+    // Get or create state for this specific exercise
+    const currentState = stateMap.get(exerciseName) || createExerciseState();
+
+    let updatedState: ExerciseState;
 
     switch (exerciseName.toLowerCase()) {
         case 'pushups':
-            return updatePushupState(state, angles);
+            updatedState = updatePushupState(currentState, angles);
+            break;
 
         case 'squats':
-            return updateSquatState(state, angles);
+            updatedState = updateSquatState(currentState, angles);
+            break;
 
         // Add more exercises as needed
         default:
-            return {
-                ...state,
+            updatedState = {
+                ...createExerciseState(),
                 feedback: `Exercise "${exerciseName}" tracking not implemented yet`,
                 percentage: 0
             };
+            break;
     }
+
+    // Create new map with updated state for this exercise
+    const newStateMap = new Map(stateMap);
+    newStateMap.set(exerciseName, updatedState);
+
+    return newStateMap;
 }

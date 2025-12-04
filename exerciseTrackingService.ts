@@ -1,292 +1,78 @@
-/**
- * Exercise tracking service
- * Manages workout sessions and tracks exercises (reps or time-based)
- */
+import { EXERCISES, QueueItem } from './types';
 
-import {
-    WorkoutSession,
-    ExerciseRecord,
-    UserProfile,
-    ExerciseType,
-    getExerciseConfig,
-    EXERCISE_MUSCLE_GROUP_MAP,
-} from './types';
-import { MuscleGroup } from './instructions_to_build_profile';
-import { ExerciseState } from './deepfitUtils';
-import { saveWorkoutSession, loadUserProfile, saveUserProfile } from './storageService';
-import { getVirtualDate } from './testingUtils';
-
-/**
- * Current active workout session (in-memory)
- */
-let currentSession: WorkoutSession | null = null;
-let currentExercise: ExerciseRecord | null = null;
-let currentExerciseName: string | null = null;
-let exerciseStartTime: Date | null = null;
-
-/**
- * Start a new workout session
- */
-export async function startWorkoutSession(userId: string): Promise<WorkoutSession> {
-    const virtualDate = await getVirtualDate();
-
-    currentSession = {
-        id: `session_${Date.now()}`,
-        userId,
-        date: virtualDate,
-        exercises: [],
-        totalDurationSeconds: 0,
-        dominantMuscleGroup: MuscleGroup.NONE,
-        nraContribution: 0,
-        completed: false,
-    };
-
-    console.log(`[ExerciseTracking] Started new workout session: ${currentSession.id}`);
-    return currentSession;
+export interface SimpleExerciseRecord {
+    duration: number;      // seconds
+    reps?: number;         // optional, for rep-based exercises
 }
 
-/**
- * Detect exercise change and save previous exercise if needed
- */
-export async function handleExerciseChange(
-    newExerciseName: string,
-    exerciseState: ExerciseState
-): Promise<void> {
-    if (!currentSession) {
-        console.warn('[ExerciseTracking] No active session');
-        return;
-    }
-
-    // If exercise changed, save the previous one
-    if (currentExerciseName && currentExerciseName !== newExerciseName) {
-        // Only finish if we actually have a current exercise being tracked
-        if (currentExercise) {
-            await finishCurrentExercise(exerciseState);
-        }
-        // Start tracking the new exercise
-        await startExercise(newExerciseName);
-    } else if (!currentExerciseName) {
-        // First exercise detection - start tracking
-        await startExercise(newExerciseName);
-    }
-    // else: same exercise, continue tracking (do nothing)
+export interface ExerciseWithReps extends SimpleExerciseRecord {
+    reps: number;
 }
 
-/**
- * Start tracking a new exercise
- */
-async function startExercise(exerciseName: string): Promise<void> {
-    const config = getExerciseConfig(exerciseName);
-    if (!config) {
-        console.warn(`[ExerciseTracking] Unknown exercise: ${exerciseName}`);
-        return;
-    }
-
-    const virtualDate = await getVirtualDate();
-    exerciseStartTime = virtualDate;
-    currentExerciseName = exerciseName;
-
-    currentExercise = {
-        exerciseName,
-        exerciseType: config.type,
-        muscleGroup: config.muscleGroup,
-        startTime: virtualDate,
-        endTime: virtualDate, // Will be updated when finished
-        formQuality: 0,
-    };
-
-    console.log(`[ExerciseTracking] Started tracking: ${exerciseName} (${config.type})`);
+export interface SimpleWorkoutSession {
+    sessionId: string;
+    startTime: Date;
+    endTime?: Date;
+    exercises: Record<EXERCISES, SimpleExerciseRecord>;
 }
 
-/**
- * Finish the current exercise and add it to the session
- */
-async function finishCurrentExercise(exerciseState: ExerciseState): Promise<void> {
-    if (!currentExercise || !exerciseStartTime || !currentSession) {
-        return;
+export class WorkoutSession {
+    s: SimpleWorkoutSession;
+    queue: LatestClassifications;
+    constructor() {
+        const initialExercises = Object.values(EXERCISES).reduce((acc, exercise) => {
+            acc[exercise] = {
+                duration: 0,
+                reps: 0
+            };
+            return acc;
+        }, {} as Record<EXERCISES, SimpleExerciseRecord>);
+
+        this.s = {
+            sessionId: `session_${Date.now()}`,
+            startTime: new Date(),
+            exercises: initialExercises,
+        };
+        this.queue = new LatestClassifications();
     }
 
-    const virtualDate = await getVirtualDate();
-    currentExercise.endTime = virtualDate;
-
-    const config = getExerciseConfig(currentExercise.exerciseName);
-    if (!config) return;
-
-    // Calculate duration
-    const durationMs = currentExercise.endTime.getTime() - currentExercise.startTime.getTime();
-    const durationSeconds = Math.floor(durationMs / 1000);
-
-    // Set reps or duration based on exercise type
-    if (config.type === 'reps') {
-        // For squats and pushups, use the count from exerciseState
-        currentExercise.reps = Math.floor(exerciseState.count);
-        console.log(`[ExerciseTracking] Finished ${currentExercise.exerciseName}: ${currentExercise.reps} reps`);
-    } else {
-        // For time-based exercises, use duration
-        currentExercise.durationSeconds = durationSeconds;
-        console.log(`[ExerciseTracking] Finished ${currentExercise.exerciseName}: ${durationSeconds}s`);
+    getJson(): string {
+        this.s.endTime = new Date();
+        return JSON.stringify(this.s);
     }
-
-    // Calculate average form quality (simplified - using current form)
-    currentExercise.formQuality = exerciseState.form;
-
-    // Validate exercise before adding to session
-    // Filter out false positives: 0 reps or duration < 30 seconds
-    const MIN_DURATION_SECONDS = 30;
-    let isValid = false;
-
-    if (config.type === 'reps') {
-        // For rep-based exercises, must have at least 1 rep
-        isValid = (currentExercise.reps !== undefined && currentExercise.reps > 0);
-        if (!isValid) {
-            console.log(`[ExerciseTracking] Skipping ${currentExercise.exerciseName}: 0 reps (false positive)`);
-        }
-    } else {
-        // For time-based exercises, must be at least 30 seconds
-        isValid = (currentExercise.durationSeconds !== undefined && currentExercise.durationSeconds >= MIN_DURATION_SECONDS);
-        if (!isValid) {
-            console.log(`[ExerciseTracking] Skipping ${currentExercise.exerciseName}: ${durationSeconds}s < ${MIN_DURATION_SECONDS}s (false positive)`);
+    incrementDuration(exercise: EXERCISES = this.queue.getSmoothedValue()): void {
+        this.s.exercises[exercise].duration += 1;
+    }
+    incrementReps(exercise: EXERCISES = this.queue.getSmoothedValue()): void {
+        if (typeof (this.s.exercises[exercise].reps) === 'number') {
+            this.s.exercises[exercise].reps += 1;
         }
     }
-
-    // Only add valid exercises to session
-    if (isValid) {
-        currentSession.exercises.push(currentExercise);
-        console.log(`[ExerciseTracking] ✓ Added ${currentExercise.exerciseName} to session`);
-    }
-
-    // Reset current exercise
-    currentExercise = null;
-    currentExerciseName = null;
-    exerciseStartTime = null;
-}
-
-/**
- * Update exercise progress (called on each frame)
- */
-export function updateExerciseProgress(
-    exerciseName: string,
-    exerciseState: ExerciseState
-): void {
-    // Just track the exercise name change
-    // The actual saving happens in handleExerciseChange
-    if (currentExerciseName !== exerciseName) {
-        // Exercise changed - this will be handled by handleExerciseChange
+    addClassification(qi: QueueItem): void {
+        this.queue.add(qi);
     }
 }
 
-/**
- * Complete and save the current workout session
- */
-export async function completeWorkoutSession(
-    exerciseState: ExerciseState
-): Promise<WorkoutSession | null> {
-    if (!currentSession) {
-        console.warn('[ExerciseTracking] No active session to complete');
-        return null;
+
+export class LatestClassifications {
+    static queueSize = 10;
+    queue: QueueItem[] = Array.from({ length: LatestClassifications.queueSize }, () => ({ name: EXERCISES.UNKNOWN, confidence: 0 }));
+    currentIndex: number = 0;
+
+    add(qi: QueueItem): void {
+        this.queue[this.currentIndex] = qi;
+        this.currentIndex = (this.currentIndex + 1) % LatestClassifications.queueSize;
     }
 
-    // Finish current exercise if any
-    if (currentExercise) {
-        await finishCurrentExercise(exerciseState);
+    getSmoothedValue(): EXERCISES {
+        const scores = this.queue.reduce((acc, item) => {
+            acc[item.name] = (acc[item.name] || 0) + item.confidence;
+            return acc;
+        }, {} as Record<EXERCISES, number>);
+
+        return Object.values(EXERCISES).reduce((best, exercise) => {
+            const score = scores[exercise] ?? 0;
+            return score > (scores[best] ?? 0) ? exercise : best;
+        }, EXERCISES.UNKNOWN);
     }
-
-    // Calculate total duration
-    if (currentSession.exercises.length > 0) {
-        const firstStart = currentSession.exercises[0].startTime;
-        const lastEnd = currentSession.exercises[currentSession.exercises.length - 1].endTime;
-        currentSession.totalDurationSeconds = Math.floor(
-            (lastEnd.getTime() - firstStart.getTime()) / 1000
-        );
-    }
-
-    // Determine dominant muscle group (most worked)
-    const muscleGroupCounts: Record<string, number> = {};
-    currentSession.exercises.forEach(ex => {
-        const group = ex.muscleGroup;
-        muscleGroupCounts[group] = (muscleGroupCounts[group] || 0) + 1;
-    });
-
-    let maxCount = 0;
-    let dominantGroup = MuscleGroup.NONE;
-    Object.entries(muscleGroupCounts).forEach(([group, count]) => {
-        if (count > maxCount) {
-            maxCount = count;
-            dominantGroup = group as MuscleGroup;
-        }
-    });
-    currentSession.dominantMuscleGroup = dominantGroup;
-
-    // Mark as completed
-    currentSession.completed = true;
-
-    // Save to storage
-    await saveWorkoutSession(currentSession);
-
-    // Update user profile stats
-    await updateUserProfileStats(currentSession);
-
-    console.log(`[ExerciseTracking] Completed workout session: ${currentSession.id}`);
-    console.log(`  - Exercises: ${currentSession.exercises.length}`);
-    console.log(`  - Duration: ${currentSession.totalDurationSeconds}s`);
-    console.log(`  - Dominant muscle group: ${currentSession.dominantMuscleGroup}`);
-
-    const completedSession = currentSession;
-
-    // Reset current session
-    currentSession = null;
-    currentExercise = null;
-    currentExerciseName = null;
-    exerciseStartTime = null;
-
-    return completedSession;
-}
-
-/**
- * Update user profile statistics after completing a session
- */
-async function updateUserProfileStats(session: WorkoutSession): Promise<void> {
-    const profile = await loadUserProfile();
-    if (!profile) return;
-
-    // Update total workouts
-    profile.totalWorkouts += 1;
-
-    // Update total reps and minutes
-    session.exercises.forEach(ex => {
-        if (ex.reps) {
-            profile.totalReps += ex.reps;
-        }
-        if (ex.durationSeconds) {
-            profile.totalMinutes += Math.floor(ex.durationSeconds / 60);
-        }
-    });
-
-    await saveUserProfile(profile);
-    console.log('[ExerciseTracking] Updated user profile stats');
-}
-
-/**
- * Get current session info
- */
-export function getCurrentSession(): WorkoutSession | null {
-    return currentSession;
-}
-
-/**
- * Get current exercise info
- */
-export function getCurrentExercise(): ExerciseRecord | null {
-    return currentExercise;
-}
-
-/**
- * Cancel current session without saving
- */
-export function cancelWorkoutSession(): void {
-    currentSession = null;
-    currentExercise = null;
-    currentExerciseName = null;
-    exerciseStartTime = null;
-    console.log('[ExerciseTracking] Workout session cancelled');
 }

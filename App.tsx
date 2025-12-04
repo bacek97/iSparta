@@ -5,6 +5,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import Navigation from './Navigation';
+import CameraScreen from './ultraWideCamera';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -14,6 +15,7 @@ function App() {
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <View style={StyleSheet.absoluteFill}>
         <Navigation />
+        {/* <CameraScreen /> */}
       </View>
     </SafeAreaProvider>
   );

@@ -2,144 +2,132 @@
  * Type definitions for iSparta fitness tracking application
  */
 
-import { MuscleGroup } from './instructions_to_build_profile';
+export type ExerciseType = 'reps' | 'seconds';
 
-/**
- * User profile with personal information and statistics
- */
-export interface UserProfile {
-    id: string;
-    name: string;
-    avatar?: string; // Optional avatar URL or base64
-    createdAt: Date;
-    totalWorkouts: number;
-    totalReps: number; // Total reps for rep-based exercises
-    totalMinutes: number; // Total minutes for time-based exercises
-    currentStreakWeeks: number; // Current consecutive weeks with workouts
-    bestStreakWeeks: number; // Best streak ever achieved
-    currentNRA: number; // Current Weekly NRA score
-    bestNRA: number; // Best NRA score ever achieved
+export enum EXERCISES {
+    SQUATS = 'SQUATS',
+    LUNGES = 'LUNGES',
+    BICEP_CURLS = 'BICEP_CURLS',
+    SITUPS = 'SITUPS',
+    PUSHUPS = 'PUSHUPS',
+    TRICEP_EXTENSIONS = 'TRICEP_EXTENSIONS',
+    DUMBBELL_ROWS = 'DUMBBELL_ROWS',
+    JUMPING_JACKS = 'JUMPING_JACKS',
+    DUMBBELL_SHOULDER_PRESS = 'DUMBBELL_SHOULDER_PRESS',
+    LATERAL_SHOULDER_RAISES = 'LATERAL_SHOULDER_RAISES',
+    UNKNOWN = 'UNKNOWN'
 }
 
-/**
- * Exercise type - determines how it's tracked
- */
-export type ExerciseType = 'reps' | 'time';
-
-/**
- * Exercise record for a single exercise in a workout
- */
-export interface ExerciseRecord {
-    exerciseName: string; // From EXERCISE_LABELS
-    exerciseType: ExerciseType; // 'reps' for squats/pushups, 'time' for others
-    muscleGroup: MuscleGroup; // Which muscle group this exercise targets
-
-    // For rep-based exercises (squats, pushups)
-    reps?: number;
-
-    // For time-based exercises (all others)
-    durationSeconds?: number;
-
-    // Metadata
-    startTime: Date;
-    endTime: Date;
-    formQuality: number; // 0-1, average form quality during exercise
+export enum MuscleGroup {
+    ARMS = 'ARMS', // Руки
+    LEGS = 'LEGS', // Ноги
+    CHEST = 'CHEST', // Грудь
+    BACK = 'BACK', // Спина
+    RUNNING = 'RUNNING', // Бег
 }
 
-/**
- * Workout session containing multiple exercises
- */
-export interface WorkoutSession {
-    id: string;
-    userId: string;
-    date: Date; // Date of the workout
-    exercises: ExerciseRecord[];
-    totalDurationSeconds: number;
-    dominantMuscleGroup: MuscleGroup; // Primary muscle group worked this session
-    nraContribution: number; // How much this session contributed to weekly NRA
-    completed: boolean; // Whether session was properly finished
-}
-
-/**
- * Weekly statistics for NRA calculation
- */
-export interface WeeklyStats {
-    weekStartDate: Date; // Monday of the week
-    weekEndDate: Date; // Sunday of the week
-    sessions: WorkoutSession[];
-    totalVolume: number; // Total reps + minutes for the week
-    muscleGroupsWorked: MuscleGroup[]; // Unique muscle groups this week
-    daysActive: number; // Number of days with workouts
-    nraScore: number; // Final NRA for this week
-    nraComponents: {
-        wds: number; // Weekly Discipline Score
-        multiplier: number; // Long-term multiplier
-        was: number; // Weekly Activity Score
-        wms: number; // Weekly Mastery Score
-    };
-}
-
-/**
- * Leaderboard entry for a user
- */
-export interface LeaderboardEntry {
-    userId: string;
-    userName: string;
-    avatar?: string;
-    nraScore: number;
-    streakWeeks: number;
-    rank: number; // Position in leaderboard (1-based)
-    weekStartDate: Date; // Which week this score is for
-}
-
-/**
- * Exercise configuration - maps exercise names to their properties
- */
-export interface ExerciseConfig {
-    name: string;
-    type: ExerciseType;
-    muscleGroup: MuscleGroup;
-    displayName: string; // Human-readable name
-}
-
-/**
- * Mapping of exercise names to muscle groups
- * Based on EXERCISE_LABELS from deepfitUtils.ts
- */
-export const EXERCISE_MUSCLE_GROUP_MAP: Record<string, MuscleGroup> = {
-    'squats': MuscleGroup.LEGS,
-    'lunges': MuscleGroup.LEGS,
-    'bicep_curls': MuscleGroup.ARMS,
-    'situps': MuscleGroup.CHEST,
-    'pushups': MuscleGroup.CHEST,
-    'tricep_extensions': MuscleGroup.ARMS,
-    'dumbbell_rows': MuscleGroup.BACK,
-    'jumping_jacks': MuscleGroup.CARDIO,
-    'dumbbell_shoulder_press': MuscleGroup.ARMS,
-    'lateral_shoulder_raises': MuscleGroup.ARMS,
+type ExerciseNumbers = {
+    [K in EXERCISES]: number // reps or seconds
 };
 
-/**
- * Exercise configurations
- */
-export const EXERCISE_CONFIGS: ExerciseConfig[] = [
-    { name: 'squats', type: 'reps', muscleGroup: MuscleGroup.LEGS, displayName: 'Squats' },
-    { name: 'pushups', type: 'reps', muscleGroup: MuscleGroup.CHEST, displayName: 'Push-ups' },
-    { name: 'lunges', type: 'time', muscleGroup: MuscleGroup.LEGS, displayName: 'Lunges' },
-    { name: 'bicep_curls', type: 'time', muscleGroup: MuscleGroup.ARMS, displayName: 'Bicep Curls' },
-    { name: 'situps', type: 'time', muscleGroup: MuscleGroup.CHEST, displayName: 'Sit-ups' },
-    { name: 'tricep_extensions', type: 'time', muscleGroup: MuscleGroup.ARMS, displayName: 'Tricep Extensions' },
-    { name: 'dumbbell_rows', type: 'time', muscleGroup: MuscleGroup.BACK, displayName: 'Dumbbell Rows' },
-    { name: 'jumping_jacks', type: 'time', muscleGroup: MuscleGroup.CARDIO, displayName: 'Jumping Jacks' },
-    { name: 'dumbbell_shoulder_press', type: 'time', muscleGroup: MuscleGroup.ARMS, displayName: 'Shoulder Press' },
-    { name: 'lateral_shoulder_raises', type: 'time', muscleGroup: MuscleGroup.ARMS, displayName: 'Lateral Raises' },
-];
 
-/**
- * Get exercise configuration by name
- */
-export function getExerciseConfig(exerciseName: string): ExerciseConfig | undefined {
-    return EXERCISE_CONFIGS.find(config => config.name === exerciseName);
+export interface TodayResults extends ExerciseNumbers {
+    topMuscleGroup: MuscleGroup;
+    trainedDifferentGroupYesterday: boolean;
+    bonusForFirst30SecondsInExerciseInFullUserHistory: number;
+    bonusExerciseNamesConcatenated: string;
+}
+
+export interface Last7DaysResults extends ExerciseNumbers {
+    allMuscleGroupsTrained: boolean;
+    completedNewExerciseForTheFirstTime: boolean;
+}
+
+
+type ExerciseUnlockBonus = {
+    [K in EXERCISES]: {
+        conditionToUnlock: { type: ExerciseType; value: number };
+        amount: Partial<Record<MuscleGroup, number>>;
+    }
+};
+
+type ExerciseProgressBonus = {
+    [K in EXERCISES]: {
+        conditionToGetBonus: { type: ExerciseType; value: number };
+        amount: Partial<Record<MuscleGroup, number>>;
+    }
+};
+
+export type ExerciseProgress = {
+    [K in EXERCISES]: {
+        durationSeconds: number;
+        reps?: number;
+    }
+}
+
+type ProfileBonus = {
+    [K in EXERCISES]: {
+        unlockedDate: Date;
+        bonus: {
+            ByLastWeek: number;
+            ByLastMonth: number;
+            ByLastYear: number;
+            averagedByWeeks: number;
+        };
+        count: {
+            ByLastWeek: number;
+            ByLastMonth: number;
+            ByLastYear: number;
+            averagedByWeeks: number;
+            counterType: ExerciseType;
+        }
+        countOfUnlockedExercises: number;
+    }
+}
+
+
+export const EXERCISE_MUSCLE_GROUP_POINTS: ExerciseUnlockBonus = {
+    [EXERCISES.SQUATS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.LEGS]: 1, [MuscleGroup.ARMS]: 2 } },
+    [EXERCISES.LUNGES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
+    [EXERCISES.BICEP_CURLS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+    [EXERCISES.SITUPS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.CHEST]: 1 } },
+    [EXERCISES.PUSHUPS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.CHEST]: 1 } },
+    [EXERCISES.TRICEP_EXTENSIONS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+    [EXERCISES.DUMBBELL_ROWS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.BACK]: 1 } },
+    [EXERCISES.JUMPING_JACKS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
+    [EXERCISES.DUMBBELL_SHOULDER_PRESS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+    [EXERCISES.LATERAL_SHOULDER_RAISES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+    [EXERCISES.UNKNOWN]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: {} }
+};
+
+export const ExerciseType: Record<EXERCISES, ExerciseType> = {
+    [EXERCISES.SQUATS]: 'reps',
+    [EXERCISES.PUSHUPS]: 'reps',
+    [EXERCISES.LUNGES]: 'seconds',
+    [EXERCISES.BICEP_CURLS]: 'seconds',
+    [EXERCISES.SITUPS]: 'seconds',
+    [EXERCISES.TRICEP_EXTENSIONS]: 'seconds',
+    [EXERCISES.DUMBBELL_ROWS]: 'seconds',
+    [EXERCISES.DUMBBELL_SHOULDER_PRESS]: 'seconds',
+    [EXERCISES.JUMPING_JACKS]: 'seconds',
+    [EXERCISES.LATERAL_SHOULDER_RAISES]: 'seconds',
+    [EXERCISES.UNKNOWN]: 'seconds',
+};
+
+export const messagesExercises = {
+    en: {
+        [EXERCISES.SQUATS]: 'Squats',
+        [EXERCISES.PUSHUPS]: 'Pushups',
+        [EXERCISES.LUNGES]: 'Lunges',
+        [EXERCISES.BICEP_CURLS]: 'Bicep curls',
+        [EXERCISES.SITUPS]: 'Situps',
+        [EXERCISES.TRICEP_EXTENSIONS]: 'Tricep extensions',
+        [EXERCISES.DUMBBELL_ROWS]: 'Dumbbell rows',
+        [EXERCISES.DUMBBELL_SHOULDER_PRESS]: 'Dumbbell shoulder press',
+        [EXERCISES.JUMPING_JACKS]: 'Jumping jacks',
+        [EXERCISES.LATERAL_SHOULDER_RAISES]: 'Lateral shoulder raises',
+        [EXERCISES.UNKNOWN]: 'Unknown',
+    }
 }
 
 /**
@@ -148,4 +136,9 @@ export function getExerciseConfig(exerciseName: string): ExerciseConfig | undefi
  */
 export interface DateOffset {
     days: number; // Number of days to offset from current date
+}
+
+export interface QueueItem {
+    name: EXERCISES;
+    confidence: number;
 }
