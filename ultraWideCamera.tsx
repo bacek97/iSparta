@@ -3,13 +3,39 @@
 import { useRef, useState } from 'react'
 import { Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, Dimensions } from 'react-native'
 import { Camera, CameraDevice, getCameraDevice, useCameraDevice } from 'react-native-vision-camera'
+import { useEffect } from 'react'
+import { AppState, AppStateStatus } from 'react-native'
+
+export function useAppState() {
+    const currentState = AppState.currentState
+    const [appState, setAppState] = useState(currentState)
+
+    useEffect(() => {
+        function onChange(newState: AppStateStatus) {
+            setAppState(newState)
+        }
+
+        const subscription = AppState.addEventListener('change', onChange)
+
+        return () => {
+            subscription.remove()
+        }
+    }, [])
+
+    return appState
+}
 
 const isAndroid = Platform.OS === 'android'
 const isIOS = Platform.OS === 'ios'
 const SCREEN_W = Dimensions.get('window').width
 
-const CameraScreen: React.FC<any> = () => {
-    const [cameraID, setCameraID] = useState(1)
+interface CameraScreenProps {
+    frameProcessor?: any;
+    onOutputOrientationChanged?: (orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right") => any
+}
+
+const CameraScreen: React.FC<CameraScreenProps> = ({ frameProcessor, onOutputOrientationChanged }) => {
+    const [cameraID, setCameraID] = useState(0)
     const cameraRef = useRef<Camera | null>(null)
     //   const isFocused = useIsFocused()
     const isFocused = true
@@ -25,16 +51,17 @@ const CameraScreen: React.FC<any> = () => {
     let ultraWideCamera: CameraDevice | undefined
     let ultraWideDevice: CameraDevice | undefined
 
+    // console.log('backCameras', backCameras);
     if (isAndroid && !hasWideAngleSupport) {
         ultraWideCamera = backCameras?.find((item) => item?.physicalDevices.includes('ultra-wide-angle-camera'))
     }
     ultraWideDevice = getCameraDevice([backCameras[cameraID]], 'front')
     if (ultraWideCamera && isAndroid) {
     }
-    console.log('ultraWideDevice', ultraWideDevice);
-    console.log('supportedDevice', supportedDevice);
-    console.log('ultraWideCamera', ultraWideCamera);
-    console.log('physicalCameras', physicalCameras);
+    // console.log('ultraWideDevice', ultraWideDevice);
+    // console.log('supportedDevice', supportedDevice);
+    // console.log('ultraWideCamera', ultraWideCamera);
+    // console.log('physicalCameras', physicalCameras);
     const { minZoom, maxZoom, neutralZoom } = supportedDevice || {}
     const ultraWideZoom = ultraWideCamera && isAndroid ? ultraWideCamera?.minZoom : minZoom
     const defaultZoom = neutralZoom
@@ -97,11 +124,12 @@ const CameraScreen: React.FC<any> = () => {
                         ref={cameraRef}
                         enableZoomGesture
                         resizeMode="cover"
-                        isActive={isActive}
+                        isActive={useAppState() === "active"}
                         style={styles.camera}
                         device={ultraWideDevice!}
                         format={selectedFormat}
                         frameProcessor={frameProcessor}
+                        onOutputOrientationChanged={onOutputOrientationChanged}
                     />
                 </View>
                 {/* <View style={styles.zoomOptionsView}>

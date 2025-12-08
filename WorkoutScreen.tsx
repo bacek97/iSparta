@@ -13,30 +13,23 @@ import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { NativeEventEmitter, View } from 'react-native';
 import { Svg, Circle, Line, Text as SvgText, Rect } from 'react-native-svg';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     extractDeepFitKeypoints,
     normalizeKeypoints,
-    getExerciseName,
-    updateExerciseState,
-    createExerciseState,
+    getExerciseNameAndConfidence,
     type Keypoint,
-    type ExerciseState
+    calculateBodyAngles
 } from './deepfitUtils';
-import {
-    startWorkoutSession,
-    handleExerciseChange,
-    completeWorkoutSession,
-    getCurrentSession,
-    incrementCurrentExerciseDuration,
-} from './exerciseTrackingService';
-import { updateCurrentWeekNRA } from './nraCalculationService';
+import { WorkoutSession } from './exerciseTrackingService';
+import { EXERCISES, ExerciseType, PoseLandmark, PoseLandmarksEvent, PoseLandmarksErrorEvent, PoseLandmarksStatusEvent } from './types';
 import { moveToNextDay, moveToPreviousDay, getDateInfo } from './testingUtils';
 import { loadUserProfile, createDefaultProfile } from './storageService';
-import { getExerciseConfig } from './types';
+import UltraWideCamera from './ultraWideCamera';
 
 const { PoseLandmarks } = NativeModules;
 
-console.log('[PoseLandmarks] PoseLandmarks module:', PoseLandmarks);
+// console.log('[PoseLandmarks] PoseLandmarks module:', PoseLandmarks);
 
 const poseLandmarksEmitter = new NativeEventEmitter(PoseLandmarks);
 
@@ -66,40 +59,44 @@ const poseLandMarkPlugin = VisionCameraProxy.initFrameProcessorPlugin(
     {},
 );
 
-console.log('[PoseLandmarks] poseLandMarkPlugin initialized:', poseLandMarkPlugin);
-
-type PoseLandmark = {
-    x: number;
-    y: number;
-    z: number;
-    visibility: number;
-    keypoint: number;
-};
+// console.log('[PoseLandmarks] poseLandMarkPlugin initialized:', poseLandMarkPlugin);
 
 interface PoseCameraDemoProps {
     modelPath?: string;
     onNavigateToProfile?: () => void;
 }
 
-function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmarker_full.task', onNavigateToProfile }: PoseCameraDemoProps) {
+function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmarker_lite.task', onNavigateToProfile }: PoseCameraDemoProps) {
     const [landmarks, setLandmarks] = useState<PoseLandmark[][]>([]);
     const [pluginDeepFit, setPluginDeepFit] = useState<{ model: TensorflowModel | null }>({ model: null });
 
-    // Map-based exercise state management - each exercise maintains its own state
-    const [exerciseStates, setExerciseStates] = useState<Map<string, ExerciseState>>(new Map());
+    // Store current exercise calculation results from workoutSession
+    const [currentExerciseData, setCurrentExerciseData] = useState<{ percent?: number; form?: number; feedback?: string }>({});
 
     const [exerciseName, setExerciseName] = useState<string>('');
     const [previousExerciseName, setPreviousExerciseName] = useState<string>('');
     const [sessionActive, setSessionActive] = useState<boolean>(false);
     const [userId, setUserId] = useState<string>('');
     const [dateInfo, setDateInfo] = useState<string>('');
-    const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+    const [currentConfidence, setCurrentConfidence] = useState<number>(0);
+    const [currentPresence, setCurrentPresence] = useState<number>(0);
 
-    // Exercise name debouncing buffer (similar to DeepFit's frame_queue)
-    // DeepFit uses 250 frames, we use 45 frames (~1.5 seconds at 30 FPS)
-    const [exerciseBuffer, setExerciseBuffer] = useState<string[]>([]);
-    const fps = 5;
-    const EXERCISE_BUFFER_SIZE = fps * 1.5;
+    // FPS calculation window duration in seconds
+    const FPS_WINDOW_SECONDS = 5;
+    const MAX_FPS = 35;
+
+    // Shared values for FPS tracking - counts frames in last N seconds
+    const actualFPS = useSharedValue<number>(0);
+    const lastFrameTime = useSharedValue<number>(0);
+    // Circular buffer to store frame timestamps
+    const frameTimestamps = useSharedValue<number[]>([]);
+    const frameTimestampIndex = useSharedValue<number>(0);
+
+    // Flag to control frame processing - only process when previous frame is done
+    const canProcessFrame = useSharedValue<boolean>(true);
+
+    // WorkoutSession instance for tracking exercises
+    const [workoutSession, setWorkoutSession] = useState<WorkoutSession | null>(null);
 
     // Rotation angle: 0, 90, 180, or 270 degrees
     // DeepFit model expects landscape orientation (width > height)
@@ -132,12 +129,12 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                 const info = await getDateInfo();
                 setDateInfo(info);
 
-                console.log('[WorkoutScreen] Loading DeepFit classifier...');
+                // console.log('[WorkoutScreen] Loading DeepFit classifier...');
                 const model = await loadTensorflowModel(
                     require('./models_tflite/deepfit_classifier_v3.tflite'),
                     'nnapi'
                 );
-                console.log('[WorkoutScreen] DeepFit classifier loaded successfully!');
+                // console.log('[WorkoutScreen] DeepFit classifier loaded successfully!');
                 setPluginDeepFit({ model });
             } catch (error) {
                 console.error('[WorkoutScreen] Initialization error:', error);
@@ -200,14 +197,18 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
     };
 
     useEffect(() => {
-        console.log('[PoseLandmarks] Setting up event listeners...');
+        // console.log('[PoseLandmarks] Setting up event listeners...');
 
         // Set up the event listener to listen for pose landmarks detection results
         const subscription = poseLandmarksEmitter.addListener(
             'onPoseLandmarksDetected',
-            event => {
-                console.log('[PoseLandmarks] onPoseLandmarksDetected event received!');
-                console.log('[PoseLandmarks] Number of poses:', event.landmarks?.length);
+            (event: PoseLandmarksEvent) => {
+                // Allow processing of the next frame now that this event has been received
+                canProcessFrame.value = true;
+
+
+                // console.log('[PoseLandmarks] onPoseLandmarksDetected event received!');
+                // console.log('[PoseLandmarks] Number of poses:', event.landmarks?.length);
 
                 // Update the landmarks state to render them on the screen
                 setLandmarks(event.landmarks || []);
@@ -231,6 +232,16 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                         y: landmark.y * CAMERA_HEIGHT,  // Scale by camera height
                         confidence: landmark.visibility
                     }));
+                    const sum = pose.reduce((a: number, landmark: PoseLandmark) => a + landmark.visibility, 0);
+                    const avg = (sum / pose.length) || 0;
+                    // console.log('Average visibility:', avg);
+                    setCurrentConfidence(avg);
+
+                    // Calculate average presence
+                    const presenceSum = pose.reduce((a: number, landmark: PoseLandmark) => a + (landmark.presence || 0), 0);
+                    const avgPresence = (presenceSum / pose.length) || 0;
+                    // console.log('Average presence:', avgPresence);
+                    setCurrentPresence(avgPresence);
                     // Transform to landscape orientation if rotation key is enabled
                     // DeepFit model ALWAYS requires landscape orientation (width > height)
                     keypoints = transformKeypointsForLandscape(keypoints, CAMERA_WIDTH, CAMERA_HEIGHT);
@@ -244,73 +255,62 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                         const deepfitOutputs = pluginDeepFit.model.runSync([normalizedInput]);
                         const exerciseProbs = deepfitOutputs[0] as Float32Array;
 
-                        // Get raw exercise name from model
-                        const detectedResult = getExerciseName(exerciseProbs);
-                        const detectedExercise = detectedResult.name;
-                        const confidence = detectedResult.maxValue;
-
-                        // Add to buffer and get smoothed exercise name (majority voting)
-                        // This prevents flickering between exercises due to misclassification
-                        const newBuffer = [...exerciseBuffer, detectedExercise];
-                        if (newBuffer.length > EXERCISE_BUFFER_SIZE) {
-                            newBuffer.shift(); // Remove oldest
-                        }
-                        setExerciseBuffer(newBuffer);
-
-                        // Get most common exercise from buffer (like DeepFit's max(set(frame_queue), key=frame_queue.count))
-                        const exerciseCounts: Record<string, number> = {};
-                        newBuffer.forEach(ex => {
-                            exerciseCounts[ex] = (exerciseCounts[ex] || 0) + 1;
-                        });
-                        const smoothedExercise = Object.entries(exerciseCounts).reduce((a, b) =>
-                            exerciseCounts[a[0]] > exerciseCounts[b[0]] ? a : b
-                        )[0];
-
-                        console.log(`[PoseLandmarks] Raw: ${detectedExercise}, Smoothed: ${smoothedExercise}, Confidence: ${confidence.toFixed(4)} (buffer: ${newBuffer.length})`);
-
-                        // Handle exercise change
-                        if (previousExerciseName && previousExerciseName !== smoothedExercise) {
-                            console.log(`[WorkoutScreen] Exercise changed: ${previousExerciseName} -> ${smoothedExercise}`);
-
-                            // Notify tracking service if session is active
-                            if (sessionActive) {
-                                const previousState = exerciseStates.get(previousExerciseName) || createExerciseState();
-                                const reps = Math.floor(previousState.count);
-                                handleExerciseChange(smoothedExercise, confidence, reps).catch(err =>
-                                    console.error('[WorkoutScreen] Error handling exercise change:', err)
-                                );
-                            }
-                        } else if (!previousExerciseName && smoothedExercise) {
-                            // First exercise detection
-                            console.log(`[WorkoutScreen] First exercise detected: ${smoothedExercise}`);
-
-                            // Notify tracking service if session is active
-                            if (sessionActive) {
-                                handleExerciseChange(smoothedExercise, confidence, 0).catch(err =>
-                                    console.error('[WorkoutScreen] Error handling exercise change:', err)
-                                );
-                            }
+                        // Get raw exercise name and confidence from model
+                        const detectedResult = getExerciseNameAndConfidence(exerciseProbs);
+                        let detectedExercise = detectedResult.name;
+                        // const confidence = detectedResult.confidence;
+                        const confidence = avg;
+                        if (confidence < 0.5) {
+                            detectedExercise = EXERCISES.UNKNOWN;
                         }
 
-                        setPreviousExerciseName(smoothedExercise);
-                        setExerciseName(smoothedExercise);
+                        // console.log(`[PoseLandmarks] Raw: ${detectedExercise}, Confidence: ${confidence.toFixed(4)}`);
 
-                        // Update exercise state for rep counting (skip for Unknown)
-                        if (smoothedExercise !== 'Unknown') {
-                            const newStateMap = updateExerciseState(smoothedExercise, exerciseStates, keypoints);
-                            setExerciseStates(newStateMap);
+                        // Add to queue for smoothing (always, even for Unknown)
+                        console.log('[DEBUG] Before if - sessionActive:', sessionActive, 'workoutSession:', !!workoutSession);
+                        if (sessionActive && workoutSession) {
+                            console.log('[DEBUG] Inside if - calling calculate');
+                            workoutSession.addClassification(detectedResult);
 
-                            // Update reps in tracking service if session is active
-                            if (sessionActive) {
-                                const currentState = newStateMap.get(smoothedExercise) || createExerciseState();
-                                const reps = Math.floor(currentState.count);
-                                // Update reps without changing exercise
-                                if (previousExerciseName === smoothedExercise) {
-                                    handleExerciseChange(smoothedExercise, confidence, reps).catch(err =>
-                                        console.error('[WorkoutScreen] Error updating reps:', err)
-                                    );
+                            // Get smoothed exercise name from queue (like DeepFit's workout_name_after_smoothening)
+                            const smoothedExerciseName = workoutSession.queue.getSmoothedValue();
+
+                            // console.log(`[Smoothing] Raw: ${detectedExercise}, Smoothed: ${smoothedExerciseName}`);
+
+                            // Calculate exercise metrics using workoutSession
+                            const { duration, reps, percent } = workoutSession.calculate(smoothedExerciseName, calculateBodyAngles(keypoints));
+
+                            console.log('percent283', percent);
+
+                            // Determine form and feedback based on percent
+                            let form = 1; // Good form by default
+                            let feedback = '';
+
+                            if (percent !== undefined) {
+                                // Form is good if percent is progressing (between 0-100)
+                                form = (percent >= 0 && percent <= 100) ? 1 : 0;
+
+                                // Generate feedback based on progress
+                                if (percent < 30) {
+                                    feedback = 'Start position';
+                                } else if (percent < 70) {
+                                    feedback = 'In progress';
+                                } else if (percent < 100) {
+                                    feedback = 'Almost there';
+                                } else {
+                                    feedback = 'Complete!';
                                 }
                             }
+
+                            // Update UI with smoothed value and calculated data
+                            setPreviousExerciseName(smoothedExerciseName);
+                            setExerciseName(smoothedExerciseName);
+                            setCurrentExerciseData({ percent, form, feedback });
+                        } else {
+                            // No active session - just update UI with raw detection
+                            setPreviousExerciseName(detectedExercise);
+                            setExerciseName(detectedExercise);
+                            setCurrentExerciseData({});
                         }
 
 
@@ -324,14 +324,16 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
 
         const statusSubscription = poseLandmarksEmitter.addListener(
             'onPoseLandmarksStatus',
-            event => {
-                console.log('[PoseLandmarks] Status event:', JSON.stringify(event, null, 2));
+            (event: PoseLandmarksStatusEvent) => {
+
+                canProcessFrame.value = true;
+                // console.log('[PoseLandmarks] Status event:', JSON.stringify(event, null, 2));
             },
         );
 
         const errorSubscription = poseLandmarksEmitter.addListener(
             'onPoseLandmarksError',
-            event => {
+            (event: PoseLandmarksErrorEvent) => {
                 console.error('[PoseLandmarks] ❌ ERROR EVENT ❌');
                 console.error('[PoseLandmarks] Error event:', JSON.stringify(event, null, 2));
                 console.error('[PoseLandmarks] Error message:', event.error);
@@ -339,45 +341,85 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
         );
 
         // Initialize the model with the provided model path
-        console.log('[PoseLandmarks] Calling PoseLandmarks.initModel with path:', modelPath);
+        // console.log('[PoseLandmarks] Calling PoseLandmarks.initModel with path:', modelPath);
         PoseLandmarks.initModel(modelPath);
 
         // Clean up the event listener when the component is unmounted
         return () => {
-            console.log('[PoseLandmarks] Cleaning up event listeners');
+            // console.log('[PoseLandmarks] Cleaning up event listeners');
             subscription.remove();
             statusSubscription.remove();
             errorSubscription.remove();
         };
-    }, [modelPath, pluginDeepFit, exerciseStates]);
+    }, [modelPath, pluginDeepFit, canProcessFrame, sessionActive, workoutSession]);
     const { resize } = useResizePlugin();
 
     useEffect(() => {
         // Request camera permission on component mount
-        console.log('[PoseLandmarks] Requesting camera permission...');
+        // console.log('[PoseLandmarks] Requesting camera permission...');
         requestPermission()
-            .then(granted => console.log('[PoseLandmarks] Camera permission granted:', granted))
+            // .then(granted => console.log('[PoseLandmarks] Camera permission granted:', granted))
             .catch(error => console.error('[PoseLandmarks] Camera permission error:', error));
     }, [requestPermission]);
 
-    // Create JS bridge for incrementCurrentExerciseDuration
-    const incrementDuration = useRunOnJS(incrementCurrentExerciseDuration, []);
+    // Create JS bridge for incrementing duration
+    const incrementDuration = useRunOnJS(() => {
+        if (workoutSession) {
+            workoutSession.incrementDuration();
+        }
+    }, [workoutSession]);
 
     const frameProcessor = useFrameProcessor(frame => {
         'worklet';
 
-        runAtTargetFps(fps, () => {
-            'worklet';
-            // Process the frame using the 'poseLandmarks' plugin
-            try {
+        // Process the frame using the 'poseLandmarks' plugin
+        // Only process if the previous frame has been processed (event-driven throttling)
+        // The plugin will trigger 'onPoseLandmarksDetected' event when landmarks are detected
+        // All DeepFit classification and exercise tracking happens in that event handler
 
+        // Throttle to MAX_FPS
+        const currentTime = Date.now();
+        const timeSinceLastFrame = currentTime - lastFrameTime.value;
+        const shouldProcess = timeSinceLastFrame >= 1000 / MAX_FPS;
+
+        if (shouldProcess) {
+            lastFrameTime.value = currentTime;
+
+            // Add current timestamp to circular buffer
+            const maxFrames = MAX_FPS * FPS_WINDOW_SECONDS;
+            if (frameTimestamps.value.length < maxFrames) {
+                frameTimestamps.value.push(currentTime);
+            } else {
+                frameTimestamps.value[frameTimestampIndex.value] = currentTime;
+            }
+            frameTimestampIndex.value = (frameTimestampIndex.value + 1) % maxFrames;
+
+            // Count frames in last FPS_WINDOW_SECONDS
+            const windowStartTime = currentTime - (FPS_WINDOW_SECONDS * 1000);
+            let frameCount = 0;
+            for (let i = 0; i < frameTimestamps.value.length; i++) {
+                if (frameTimestamps.value[i] >= windowStartTime) {
+                    frameCount++;
+                }
+            }
+
+            // Calculate FPS: frames in window / window duration
+            actualFPS.value = frameCount / FPS_WINDOW_SECONDS;
+        }
+
+        if (canProcessFrame.value && shouldProcess) {
+            try {
                 if (poseLandMarkPlugin != null) {
+                    // Set flag to false to prevent processing next frame until event is received
+                    canProcessFrame.value = false;
                     poseLandMarkPlugin.call(frame);
                 }
             } catch (error) {
                 console.error('[FrameProcessor] Error processing frame:', error);
+                // Reset flag on error to allow next frame
+                canProcessFrame.value = true;
             }
-        });
+        }
 
         // Duration tracker at 1 FPS - only runs during active session
         runAtTargetFps(1, () => {
@@ -389,12 +431,12 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
     }, [sessionActive, incrementDuration]);
 
     if (!hasPermission) {
-        console.log('[PoseLandmarks] No camera permission');
+        // console.log('[PoseLandmarks] No camera permission');
         return <Text>No permission</Text>;
     }
 
     if (device == null) {
-        console.log('[PoseLandmarks] No camera device');
+        // console.log('[PoseLandmarks] No camera device');
         return <Text>No device</Text>;
     }
 
@@ -448,30 +490,25 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
         (f) => f.videoWidth === 640 && f.videoHeight === 480
     ) || device.formats[0];
 
-    console.log('[PoseLandmarks] Rendering camera with device:', device.id);
-    console.log('[PoseLandmarks] Selected camera format:', {
-        width: selectedFormat.videoWidth,
-        height: selectedFormat.videoHeight,
-        fps: selectedFormat.maxFps
-    });
-    console.log('[PoseLandmarks] Current landmarks count:', landmarks.length);
+    // console.log('[PoseLandmarks] Rendering camera with device:', device.id);
+    // console.log('[PoseLandmarks] Selected camera format:', {
+    // width: selectedFormat.videoWidth,
+    //     height: selectedFormat.videoHeight,
+    //     fps: selectedFormat.maxFps
+    // });
+    // console.log('[PoseLandmarks] Current landmarks count:', landmarks.length);
 
     return (
         <View style={StyleSheet.absoluteFill}>
-            <Camera
-                style={StyleSheet.absoluteFill}
-                device={device}
-                isActive={true}
+            <UltraWideCamera
                 frameProcessor={frameProcessor}
-                pixelFormat={pixelFormat}
-                format={selectedFormat}
-                zoom={1}
+                onOutputOrientationChanged={(orientation) => console.log('orientation', /^landscape/.test(orientation))}
             />
             {landmarks.length > 0 && (
                 <Svg style={StyleSheet.absoluteFill}>
-                    {landmarks.map((pose, poseIndex) => (
+                    {/* {landmarks.map((pose, poseIndex) => (
                         <React.Fragment key={`pose-${poseIndex}`}>
-                            {/* Draw lines connecting landmarks */}
+                            {/* Draw lines connecting landmarks }
                             {lines.map(([from, to], lineIndex) => {
                                 if (pose[from] && pose[to]) {
                                     // Only draw if both landmarks have good visibility
@@ -495,7 +532,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                 return null;
                             })}
 
-                            {/* Draw circles on landmarks */}
+                            {/* Draw circles on landmarks }
                             {pose.map((mark, markIndex) => {
                                 // Only draw landmarks with good visibility
                                 if (mark.visibility > 0.5) {
@@ -515,19 +552,27 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                 return null;
                             })}
                         </React.Fragment>
-                    ))}
+                    ))} */}
 
                     {/* Display exercise info */}
                     {exerciseName && (() => {
-                        const currentState = exerciseStates.get(exerciseName) || createExerciseState();
-                        const isUnknown = exerciseName === 'Unknown';
+                        const isUnknown = exerciseName === EXERCISES.UNKNOWN;
+
+                        // Use session data if active
+                        const displayReps = (sessionActive && workoutSession && workoutSession.s.exercises[exerciseName as EXERCISES])
+                            ? workoutSession.s.exercises[exerciseName as EXERCISES].reps || 0
+                            : 0;
+
+                        const displayPercent = currentExerciseData.percent || 0;
+                        const displayForm = currentExerciseData.form || 1;
+                        const displayFeedback = currentExerciseData.feedback || '';
 
                         return (
                             <>
                                 {/* Background for exercise name */}
                                 <Rect
                                     x={10}
-                                    y={20}
+                                    y={30}
                                     width={300}
                                     height={50}
                                     fill={isUnknown ? "gray" : "black"}
@@ -544,6 +589,28 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                     strokeWidth="2"
                                 >
                                     {isUnknown ? "Неизвестно" : exerciseName}
+                                </SvgText>
+
+                                {/* FPS Display - shows onPoseLandmarksDetected event frequency */}
+                                <Rect
+                                    x={320}
+                                    y={30}
+                                    width={120}
+                                    height={40}
+                                    fill="black"
+                                    opacity={0.6}
+                                    rx={8}
+                                />
+                                <SvgText
+                                    x={100}
+                                    y={55}
+                                    fontSize="28"
+                                    fontWeight="bold"
+                                    fill="lime"
+                                    stroke="black"
+                                    strokeWidth="2"
+                                >
+                                    FPS: {actualFPS.value.toFixed(1)}
                                 </SvgText>
 
                                 {/* Show exercise stats only when not Unknown */}
@@ -568,7 +635,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                             stroke="black"
                                             strokeWidth="2"
                                         >
-                                            Reps: {Math.floor(currentState.count)}
+                                            Reps: {displayReps}
                                         </SvgText>
                                         {/* Background for form */}
                                         <Rect
@@ -585,11 +652,11 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                             y={148}
                                             fontSize="24"
                                             fontWeight="bold"
-                                            fill={currentState.form === 1 ? "lime" : "red"}
+                                            fill={displayForm === 1 ? "lime" : "red"}
                                             stroke="black"
                                             strokeWidth="2"
                                         >
-                                            Form: {currentState.form === 1 ? 'Good' : 'Bad'}
+                                            Form: {displayForm === 1 ? 'Good' : 'Bad'}
                                         </SvgText>
                                         {/* Background for feedback */}
                                         <Rect
@@ -610,7 +677,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                             stroke="black"
                                             strokeWidth="2"
                                         >
-                                            {currentState.feedback}
+                                            {displayFeedback}
                                         </SvgText>
                                         {/* Background for progress */}
                                         <Rect
@@ -631,62 +698,124 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                             stroke="black"
                                             strokeWidth="2"
                                         >
-                                            Progress: {currentState.percentage.toFixed(1)}%
+                                            Progress: {displayPercent.toFixed(1)}%
+                                        </SvgText>
+                                        {/* Background for confidence */}
+                                        <Rect
+                                            x={10}
+                                            y={249}
+                                            width={250}
+                                            height={38}
+                                            fill="black"
+                                            opacity={0.6}
+                                            rx={8}
+                                        />
+                                        <SvgText
+                                            x={20}
+                                            y={277}
+                                            fontSize="24"
+                                            fontWeight="bold"
+                                            fill="orange"
+                                            stroke="black"
+                                            strokeWidth="2"
+                                        >
+                                            Confidence: {(currentConfidence * 100).toFixed(1)}%
+                                        </SvgText>
+                                        {/* Background for presence */}
+                                        <Rect
+                                            x={10}
+                                            y={335}
+                                            width={250}
+                                            height={38}
+                                            fill="black"
+                                            opacity={0.6}
+                                            rx={8}
+                                        />
+                                        <SvgText
+                                            x={20}
+                                            y={363}
+                                            fontSize="24"
+                                            fontWeight="bold"
+                                            fill="magenta"
+                                            stroke="black"
+                                            strokeWidth="2"
+                                        >
+                                            Presence: {(currentPresence * 100).toFixed(1)}%
+                                        </SvgText>
+                                        {/* Background for duration */}
+                                        <Rect
+                                            x={10}
+                                            y={292}
+                                            width={250}
+                                            height={38}
+                                            fill="black"
+                                            opacity={0.6}
+                                            rx={8}
+                                        />
+                                        <SvgText
+                                            x={20}
+                                            y={320}
+                                            fontSize="24"
+                                            fontWeight="bold"
+                                            fill="lightgreen"
+                                            stroke="black"
+                                            strokeWidth="2"
+                                        >
+                                            Duration: {sessionActive && workoutSession ? workoutSession.s.exercises[exerciseName as EXERCISES]?.duration || 0 : 0}s
                                         </SvgText>
 
                                         {/* Vertical Progress Bar */}
-                                        {currentState.form === 1 && (
-                                            <>
-                                                {/* Progress bar background (outline) */}
-                                                <Rect
-                                                    x={screenWidth - 70}
-                                                    y={50}
-                                                    width={50}
-                                                    height={300}
-                                                    fill="none"
-                                                    stroke={
-                                                        exerciseName === 'squats' ? '#00ff00' :
-                                                            exerciseName === 'pushups' ? '#00bfff' :
-                                                                exerciseName === 'lunges' ? '#ff6b00' :
-                                                                    exerciseName === 'situps' ? '#ff00ff' :
-                                                                        exerciseName === 'bicep_curls' ? '#ffff00' :
-                                                                            '#00ff00'
-                                                    }
-                                                    strokeWidth="3"
-                                                />
-                                                {/* Progress bar fill (fills from bottom to top) */}
-                                                <Rect
-                                                    x={screenWidth - 70}
-                                                    y={50 + (300 * (100 - currentState.percentage) / 100)}
-                                                    width={50}
-                                                    height={300 * currentState.percentage / 100}
-                                                    fill={
-                                                        exerciseName === 'squats' ? '#00ff00' :
-                                                            exerciseName === 'pushups' ? '#00bfff' :
-                                                                exerciseName === 'lunges' ? '#ff6b00' :
-                                                                    exerciseName === 'situps' ? '#ff00ff' :
-                                                                        exerciseName === 'bicep_curls' ? '#ffff00' :
-                                                                            '#00ff00'
-                                                    }
-                                                    opacity={0.8}
-                                                />
-                                                {/* Percentage text on progress bar */}
-                                                <SvgText
-                                                    x={screenWidth - 45}
-                                                    y={370}
-                                                    fontSize="20"
-                                                    fontWeight="bold"
-                                                    fill="white"
-                                                    stroke="black"
-                                                    strokeWidth="2"
-                                                    textAnchor="middle"
-                                                >
-                                                    {Math.round(currentState.percentage)}%
-                                                </SvgText>
-                                            </>
-                                        )}
+                                        <>
+                                            {/* Progress bar background (outline) */}
+                                            <Rect
+                                                x={screenWidth - 70}
+                                                y={50}
+                                                width={50}
+                                                height={300}
+                                                fill="none"
+                                                stroke={
+                                                    exerciseName === EXERCISES.SQUATS ? '#00ff00' :
+                                                        exerciseName === EXERCISES.PUSHUPS ? '#00bfff' :
+                                                            exerciseName === EXERCISES.LUNGES ? '#ff6b00' :
+                                                                exerciseName === EXERCISES.SITUPS ? '#ff00ff' :
+                                                                    exerciseName === EXERCISES.BICEP_CURLS ? '#ffff00' :
+                                                                        '#00ff00'
+                                                }
+                                                strokeWidth="3"
+                                            />
+                                            {/* Progress bar fill (fills from bottom to top) */}
+                                            <Rect
+                                                x={screenWidth - 70}
+                                                y={50 + (300 * (100 - displayPercent) / 100)}
+                                                width={50}
+                                                height={300 * displayPercent / 100}
+                                                fill={
+                                                    exerciseName === EXERCISES.SQUATS ? '#00ff00' :
+                                                        exerciseName === EXERCISES.PUSHUPS ? '#00bfff' :
+                                                            exerciseName === EXERCISES.LUNGES ? '#ff6b00' :
+                                                                exerciseName === EXERCISES.SITUPS ? '#ff00ff' :
+                                                                    exerciseName === EXERCISES.BICEP_CURLS ? '#ffff00' :
+                                                                        '#00ff00'
+                                                }
+                                                opacity={0.8}
+                                            />
+                                            {/* Percentage text on progress bar */}
+                                            <SvgText
+                                                x={screenWidth - 45}
+                                                y={370}
+                                                fontSize="20"
+                                                fontWeight="bold"
+                                                fill="white"
+                                                stroke="black"
+                                                strokeWidth="2"
+                                                textAnchor="middle"
+                                            >
+                                                {Math.round(displayPercent)}%
+                                            </SvgText>
+                                        </>
                                     </>
-                                )}
+                                )
+                                }
                             </>
                         );
                     })()}
@@ -698,13 +827,17 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                 <View style={styles.counterBox}>
                     <Text style={styles.counterLabel}>Squats</Text>
                     <Text style={styles.counterValue}>
-                        {Math.floor((exerciseStates.get('squats')?.count || 0))}
+                        {(sessionActive && workoutSession && workoutSession.s.exercises[EXERCISES.SQUATS])
+                            ? workoutSession.s.exercises[EXERCISES.SQUATS].reps
+                            : 0}
                     </Text>
                 </View>
                 <View style={styles.counterBox}>
                     <Text style={styles.counterLabel}>Pushups</Text>
                     <Text style={styles.counterValue}>
-                        {Math.floor((exerciseStates.get('pushups')?.count || 0))}
+                        {(sessionActive && workoutSession && workoutSession.s.exercises[EXERCISES.PUSHUPS])
+                            ? workoutSession.s.exercises[EXERCISES.PUSHUPS].reps
+                            : 0}
                     </Text>
                 </View>
             </View>
@@ -717,24 +850,39 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                     onPress={async () => {
                         if (sessionActive) {
                             // End session - complete and save
-                            console.log('[WorkoutScreen] Ending session...');
-                            const session = await completeWorkoutSession();
-                            if (session) {
-                                await updateCurrentWeekNRA();
-                                Alert.alert('Session Complete', `Saved ${session.exercises.length} exercises!\n\nSession data:\n${JSON.stringify(session, null, 2)}`);
+                            // console.log('[WorkoutScreen] Ending session...');
+                            if (workoutSession) {
+                                const sessionJson = workoutSession.getJson();
+                                const sessionData = JSON.parse(sessionJson);
+
+                                // Save to AsyncStorage
+                                await AsyncStorage.setItem(`session_${sessionData.sessionId}`, sessionJson);
+
+                                // Count exercises with data
+                                const exerciseCount = Object.values(sessionData.exercises).filter(
+                                    (ex: any) => ex.duration > 0 || (ex.reps && ex.reps > 0)
+                                ).length;
+
+                                Alert.alert('Session Complete', `Saved ${exerciseCount} exercises!\n\nSession data:\n${sessionJson}`);
                             }
                             setSessionActive(false);
-                            setSessionStartTime(null);
-                            // Reset exercise states
-                            setExerciseStates(new Map());
+                            setWorkoutSession(null);
+                            // Reset exercise data
+                            setCurrentExerciseData({});
                             setPreviousExerciseName('');
                         } else {
                             // Start session
+                            console.log('[DEBUG] Start session button pressed, userId:', userId);
                             if (userId) {
-                                await startWorkoutSession(userId);
+                                // Create new WorkoutSession
+                                const newSession = new WorkoutSession();
+                                console.log('[DEBUG] Created new session:', newSession);
+                                setWorkoutSession(newSession);
                                 setSessionActive(true);
-                                setSessionStartTime(new Date());
+                                console.log('[DEBUG] Session activated!');
                                 Alert.alert('Session Started', 'Start exercising!');
+                            } else {
+                                console.log('[DEBUG] No userId - cannot start session');
                             }
                         }
                     }}
@@ -823,7 +971,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                     <Text style={styles.dateInfo}>{dateInfo}</Text>
                 )}
             </View>
-        </View>
+        </View >
     );
 }
 

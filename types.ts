@@ -2,7 +2,53 @@
  * Type definitions for iSparta fitness tracking application
  */
 
+/**
+ * Represents a single pose landmark from MediaPipe Pose model
+ * Contains 3D coordinates, visibility and presence scores
+ * Note: Landmarks are ordered by MediaPipe index (0-32), use array index to identify keypoint
+ * Source: PoseLandmarks.kt (Android native module)
+ */
+export type PoseLandmark = {
+    x: number;          // Normalized x coordinate (0-1)
+    y: number;          // Normalized y coordinate (0-1)
+    z: number;          // Depth coordinate
+    visibility: number; // Visibility score: 1.0 = visible, 0.0 = occluded
+    presence?: number;  // Presence score: 1.0 = in scene bounds, 0.0 = out of bounds (optional)
+
+};
+
+/**
+ * Event structure emitted by the PoseLandmarks native module
+ * Event name: 'onPoseLandmarksDetected'
+ * Contains an array of poses, where each pose is an array of 33 landmarks
+ */
+export interface PoseLandmarksEvent {
+    landmarks?: PoseLandmark[][]; // Array of detected poses, each containing 33 landmarks
+}
+
+/**
+ * Error event structure emitted by the PoseLandmarks native module
+ * Event name: 'onPoseLandmarksError'
+ * Contains error message and optional context (e.g., imagePath)
+ */
+export interface PoseLandmarksErrorEvent {
+    error?: string;     // Error message from native module
+    imagePath?: string; // Optional: path to image that caused error (for detectImage method)
+}
+
+/**
+ * Status event structure emitted by the PoseLandmarks native module
+ * Event name: 'onPoseLandmarksStatus'
+ * Contains status information about model initialization
+ */
+export interface PoseLandmarksStatusEvent {
+    status?: string;    // Status message (e.g., "Model initialized successfully")
+    modelPath?: string; // Optional: path to the loaded model
+}
+
 export type ExerciseType = 'reps' | 'seconds';
+
+
 
 export enum EXERCISES {
     SQUATS = 'SQUATS',
@@ -15,6 +61,9 @@ export enum EXERCISES {
     JUMPING_JACKS = 'JUMPING_JACKS',
     DUMBBELL_SHOULDER_PRESS = 'DUMBBELL_SHOULDER_PRESS',
     LATERAL_SHOULDER_RAISES = 'LATERAL_SHOULDER_RAISES',
+    RUNNING = 'RUNNING',
+    CYCLING = 'CYCLING',
+    SWIMMING = 'SWIMMING',
     UNKNOWN = 'UNKNOWN'
 }
 
@@ -86,19 +135,19 @@ type ProfileBonus = {
 }
 
 
-export const EXERCISE_MUSCLE_GROUP_POINTS: ExerciseUnlockBonus = {
-    [EXERCISES.SQUATS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.LEGS]: 1, [MuscleGroup.ARMS]: 2 } },
-    [EXERCISES.LUNGES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
-    [EXERCISES.BICEP_CURLS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
-    [EXERCISES.SITUPS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.CHEST]: 1 } },
-    [EXERCISES.PUSHUPS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.CHEST]: 1 } },
-    [EXERCISES.TRICEP_EXTENSIONS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
-    [EXERCISES.DUMBBELL_ROWS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.BACK]: 1 } },
-    [EXERCISES.JUMPING_JACKS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
-    [EXERCISES.DUMBBELL_SHOULDER_PRESS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
-    [EXERCISES.LATERAL_SHOULDER_RAISES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
-    [EXERCISES.UNKNOWN]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: {} }
-};
+// export const EXERCISE_MUSCLE_GROUP_POINTS: ExerciseUnlockBonus = {
+//     [EXERCISES.SQUATS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.LEGS]: 1, [MuscleGroup.ARMS]: 2 } },
+//     [EXERCISES.LUNGES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
+//     [EXERCISES.BICEP_CURLS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+//     [EXERCISES.SITUPS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.CHEST]: 1 } },
+//     [EXERCISES.PUSHUPS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.CHEST]: 1 } },
+//     [EXERCISES.TRICEP_EXTENSIONS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+//     [EXERCISES.DUMBBELL_ROWS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.BACK]: 1 } },
+//     [EXERCISES.JUMPING_JACKS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
+//     [EXERCISES.DUMBBELL_SHOULDER_PRESS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+//     [EXERCISES.LATERAL_SHOULDER_RAISES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
+//     [EXERCISES.UNKNOWN]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: {} }
+// };
 
 export const ExerciseType: Record<EXERCISES, ExerciseType> = {
     [EXERCISES.SQUATS]: 'reps',
@@ -111,6 +160,9 @@ export const ExerciseType: Record<EXERCISES, ExerciseType> = {
     [EXERCISES.DUMBBELL_SHOULDER_PRESS]: 'seconds',
     [EXERCISES.JUMPING_JACKS]: 'seconds',
     [EXERCISES.LATERAL_SHOULDER_RAISES]: 'seconds',
+    [EXERCISES.RUNNING]: 'seconds',
+    [EXERCISES.CYCLING]: 'seconds',
+    [EXERCISES.SWIMMING]: 'seconds',
     [EXERCISES.UNKNOWN]: 'seconds',
 };
 

@@ -476,13 +476,17 @@ function interpolate(value: number, inMin: number, inMax: number, outMin: number
     return ((clampedValue - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
 }
 
+function interpolate_0_100(value: number, between: [number, number]): number {
+    return interpolate(value, Math.min(...between), Math.max(...between), 0, 100);
+}
+
 /**
  * Update exercise state for pushups
  * @param state Current exercise state
  * @param angles Body angles
  * @returns Updated state with feedback and count
  */
-export function updatePushupState(state: ExerciseState, angles: BodyAngles): ExerciseState {
+export function updatePushupState1(state: ExerciseState, angles: BodyAngles): ExerciseState {
     const newState = { ...state };
 
     // Calculate completion percentage based on elbow angle
@@ -556,6 +560,264 @@ export function updatePushupState(state: ExerciseState, angles: BodyAngles): Exe
 }
 
 /**
+ * Checkpoint definition for exercise counter
+ */
+interface ExerciseCheckpoint {
+    angles: Partial<BodyAngles>;
+    feedback: [string, string]; // [badFormFeedback, goodFormFeedback]
+    average_speed: number[];
+}
+
+/**
+ * Abstract base class for exercise counters
+ * Provides common functionality for tracking exercise repetitions based on body angles
+ */
+export abstract class ExerciseCounter {
+    protected methodToIncrement: () => any;
+    tech_factor: { n: number, avg: number, last_best_tech_factor: number } = { n: 0, avg: 0, last_best_tech_factor: 0 };
+    average_speed: { last_start: number, n: number, avg: number }[] = [];
+    protected direction: number = 0;
+    protected abstract threshold_angles: number[];
+    protected abstract checkpoints: ExerciseCheckpoint[];
+    protected abstract progressionAngles: Partial<{ [K in keyof BodyAngles]: [number, number] }>;
+    protected abstract primaryAngleKeys: [keyof BodyAngles, keyof BodyAngles]; // Two angle keys to use for percentage calculation
+
+    constructor(methodToIncrement: () => any) {
+        this.methodToIncrement = methodToIncrement;
+    }
+
+    /**
+     * Check body angles against current checkpoint and update direction/count
+     */
+    checkAngles(angles: BodyAngles): number {
+        let ff = (direction: number) => {
+            const checkpoint = this.checkpoints[direction];
+            let anglesOK = (Object.keys(checkpoint.angles) as (keyof BodyAngles)[]).map((key) => {
+                let anglePerfect = checkpoint.angles[key]!;
+                let angle = angles[key];
+                console.log('angle', angle, anglePerfect);
+                return anglePerfect < 0 ? -angle - anglePerfect : angle - anglePerfect;
+            });
+            // console.log('anglesOK', anglesOK, checkpoint, angles);
+            let x = Math.min(...anglesOK);
+            let group = this.threshold_angles.findIndex(v => x >= v);
+            return group;
+        }
+        let pastDirection = (this.direction === 0) ? this.checkpoints.length - 1 : this.direction - 1;
+        let pastGroup = ff(pastDirection);
+        if (this.tech_factor.last_best_tech_factor < pastGroup) {
+            this.tech_factor.last_best_tech_factor = pastGroup;
+        }
+
+        let group = ff(this.direction);
+        let percent = this.percent(angles)
+        if (group > -1) {
+
+            if (typeof (this.average_speed[0]) === 'undefined') {
+                this.tech_factor.avg = group;
+                this.tech_factor.n = 1;
+            } else if (typeof (this.average_speed[0]) !== 'undefined') {
+                this.tech_factor.avg = this.tech_factor.avg + (this.tech_factor.last_best_tech_factor - this.tech_factor.avg) / this.tech_factor.n++;
+            }
+            this.tech_factor.last_best_tech_factor = group;
+
+            let avg = this.average_speed[this.direction];
+            if (!avg) {
+                avg = { last_start: Date.now(), n: 1, avg: 0 };
+                this.average_speed[this.direction] = avg;
+            }
+            let now = Date.now();
+            let delta = now - avg.last_start;
+            avg.avg = avg.avg + (delta - avg.avg) / avg.n++;
+            avg.last_start = now;
+
+            console.log('log', pastGroup, group, this.direction);
+            this.direction = (this.direction + 1) % this.checkpoints.length;
+            if (this.direction === 1 && this.average_speed.length == this.checkpoints.length) {
+                this.methodToIncrement();
+            }
+        }
+        return this.percent(angles);
+    }
+
+    /**
+     * Calculate completion percentage for current exercise phase
+     * Uses the minimum of the two primary angles and interpolates based on progression range
+     */
+    percent(angles: BodyAngles): number {
+        const [key1, key2] = this.primaryAngleKeys;
+        const minAngle = Math.min(angles[key1], angles[key2]);
+        const progressionRange = this.progressionAngles[key1]!;
+        // return 80;
+        let percent = interpolate_0_100(minAngle, progressionRange);
+        console.log('percent', percent, key1, key2, angles[key1], angles[key2], progressionRange, this.progressionAngles[key1]!);
+        return percent;
+    }
+
+    /**
+     * Get current feedback message
+     */
+    getFeedback(isGoodForm: boolean): string {
+        const checkpoint = this.checkpoints[this.direction];
+        return isGoodForm ? checkpoint.feedback[1] : checkpoint.feedback[0];
+    }
+
+    /**
+     * Get current direction (0 = down/starting, 1 = up/returning)
+     */
+    getDirection(): number {
+        return this.direction;
+    }
+
+    /**
+     * Reset counter state
+     */
+    reset(): void {
+        this.direction = 0;
+    }
+}
+
+/**
+ * Pushup exercise counter
+ * Tracks pushups based on elbow angles (160° up, 90° down)
+ */
+export class PushupsCounter extends ExerciseCounter {
+    protected threshold_angles: number[] = [-0, -10, -15];
+    protected checkpoints: ExerciseCheckpoint[] = [
+        {
+            angles: {
+                elbowLeft: 160,
+                elbowRight: 160,
+                hipLeft: 160,
+                hipRight: 160,
+                shoulderLeft: 40,
+                shoulderRight: 40,
+            },
+            feedback: ["Bad Form. Keep body straight.", "Get into starting position"],
+            average_speed: [5000, 7000, 9000]
+        },
+        {
+            angles: {
+                elbowLeft: -90,
+                elbowRight: -90,
+                hipLeft: 160,
+                hipRight: 160
+            },
+            feedback: ["Bad Form. Extend arms fully.", "Go Down"],
+            average_speed: [5000, 7000, 9000]
+        },
+    ];
+
+    protected progressionAngles = {
+        elbowLeft: [160, 90] as [number, number],
+        elbowRight: [160, 90] as [number, number],
+    };
+
+    protected primaryAngleKeys: [keyof BodyAngles, keyof BodyAngles] = ['elbowLeft', 'elbowRight'];
+}
+
+/**
+ * Squat exercise counter
+ * Tracks squats based on knee angles (160° up, 90° down)
+ */
+export class SquatsCounter extends ExerciseCounter {
+    protected threshold_angles: number[] = [-0, -10, -15];
+    protected checkpoints: ExerciseCheckpoint[] = [
+        {
+            angles: {
+                kneeLeft: 160,
+                kneeRight: 160,
+            },
+            feedback: ["Bad Form. Stand up fully.", "Get into starting position"]
+        },
+        {
+            angles: {
+                kneeLeft: -90,
+                kneeRight: -90,
+            },
+            feedback: ["Bad Form. Go deeper.", "Go Up"]
+        },
+    ];
+
+    protected progressionAngles = {
+        kneeLeft: [160, 90] as [number, number],
+        kneeRight: [160, 90] as [number, number],
+    };
+
+    protected primaryAngleKeys: [keyof BodyAngles, keyof BodyAngles] = ['kneeLeft', 'kneeRight'];
+}
+
+export function updatePushupState(state: ExerciseState, angles: BodyAngles): ExerciseState {
+    const newState = { ...state };
+
+    // Calculate completion percentage based on elbow angle
+    // 90 degrees = fully down (0%), 160 degrees = fully up (100%)
+    newState.percentage = interpolate_0_100(
+        Math.min(angles.elbowLeft, angles.elbowRight),
+        [90, 160]
+    );
+
+    // Check if form is correct at the start (arms extended, body straight)
+    if (
+        angles.elbowLeft > 160 &&
+        angles.elbowRight > 160 &&
+        angles.shoulderLeft > 40 &&
+        angles.shoulderRight > 40 &&
+        angles.hipLeft > 160 &&
+        angles.hipRight > 160
+    ) {
+        newState.form = 1;
+    }
+
+    // Track full pushup motion
+    // if (newState.form === 1) {
+    // At the bottom position (near 0%)
+    // Using <= 10 instead of <= 5 to be less strict
+    if (newState.direction === 0 && newState.percentage <= 10) {
+        // if (
+        //     angles.elbowLeft <= 90 &&
+        //     angles.elbowRight <= 90 &&
+        //     angles.hipLeft > 160 &&
+        //     angles.hipRight > 160
+        // ) {
+        newState.feedback = "Go Up";
+        //     if (newState.direction === 0) {
+        newState.count += 0.5;
+        newState.direction = 1;
+        //     }
+        // } else {
+        //     newState.feedback = "Bad Form. Keep body straight.";
+        // }
+    }
+
+    // At the top position (near 100%)
+    // Using >= 90 instead of >= 95 to be less strict
+    if (newState.direction === 1 && newState.percentage >= 90) {
+        // if (
+        //     angles.elbowLeft > 160 &&
+        //     angles.elbowRight > 160 &&
+        //     angles.shoulderLeft > 40 &&
+        //     angles.shoulderRight > 40 &&
+        //     angles.hipLeft > 160 &&
+        //     angles.hipRight > 160
+        // ) {
+        newState.feedback = "Go Down";
+        //     if (newState.direction === 1) {
+        newState.count += 0.5;
+        newState.direction = 0;
+        //     }
+        // } else {
+        //     newState.feedback = "Bad Form. Extend arms fully.";
+        // }
+    }
+    // } else {
+    //     newState.feedback = "Get into starting position";
+    // }
+
+    return newState;
+}
+
+/**
  * Update exercise state for squats
  * @param state Current exercise state
  * @param angles Body angles
@@ -582,8 +844,11 @@ export function updateSquatState(state: ExerciseState, angles: BodyAngles): Exer
             if (kneeAngle < 90) {
                 newState.feedback = "Go Up";
                 if (newState.direction === 0) {
+                    console.log(`[SQUAT] 🔵 BOTTOM PHASE COMPLETE - Count: ${state.count} -> ${state.count + 0.5}, KneeAngle: ${kneeAngle.toFixed(1)}°, Percentage: ${newState.percentage.toFixed(1)}%, Direction: ${state.direction} -> 1`);
                     newState.count += 0.5;
                     newState.direction = 1;
+                } else {
+                    console.log(`[SQUAT] ⚠️ Already counted bottom phase - Count: ${state.count}, KneeAngle: ${kneeAngle.toFixed(1)}°, Direction: ${state.direction}`);
                 }
             } else {
                 newState.feedback = "Bad Form. Go deeper.";
@@ -596,8 +861,11 @@ export function updateSquatState(state: ExerciseState, angles: BodyAngles): Exer
             if (kneeAngle > 169) {
                 newState.feedback = "Go Down";
                 if (newState.direction === 1) {
+                    console.log(`[SQUAT] 🟢 TOP PHASE COMPLETE - Count: ${state.count} -> ${state.count + 0.5}, KneeAngle: ${kneeAngle.toFixed(1)}°, Percentage: ${newState.percentage.toFixed(1)}%, Direction: ${state.direction} -> 0`);
                     newState.count += 0.5;
                     newState.direction = 0;
+                } else {
+                    console.log(`[SQUAT] ⚠️ Already counted top phase - Count: ${state.count}, KneeAngle: ${kneeAngle.toFixed(1)}°, Direction: ${state.direction}`);
                 }
             } else {
                 newState.feedback = "Bad Form. Stand up fully.";
@@ -626,16 +894,17 @@ export function createExerciseState(): ExerciseState {
 /**
  * Update exercise state based on detected exercise type
  * Now works with a Map to preserve state for each exercise independently
- * @param exerciseName Name of the exercise (from model output)
+ * @param exerciseName Name of the exercise (EXERCISES enum)
  * @param stateMap Map of exercise names to their states
  * @param landmarks MediaPipe landmarks (33 points)
  * @returns Updated state map
  */
+
 export function updateExerciseState(
-    exerciseName: string,
-    stateMap: Map<string, ExerciseState>,
+    exerciseName: EXERCISES,
+    stateMap: Map<EXERCISES, ExerciseState>,
     landmarks: Keypoint[]
-): Map<string, ExerciseState> {
+): Map<EXERCISES, ExerciseState> {
     const angles = calculateBodyAngles(landmarks);
 
     // Get or create state for this specific exercise
@@ -663,7 +932,7 @@ export function updateExerciseState(
     }
 
     // Create new map with updated state for this exercise
-    const newStateMap = new Map(stateMap);
+    const newStateMap: Map<EXERCISES, ExerciseState> = new Map(stateMap);
     newStateMap.set(exerciseName, updatedState);
 
     return newStateMap;

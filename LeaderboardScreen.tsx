@@ -1,435 +1,171 @@
 import React, { useEffect, useState } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    ScrollView,
-    TouchableOpacity,
-    Alert,
-} from 'react-native';
-import { loadUserProfile, loadAllWeeklyStats } from './storageService';
-import { getVirtualDate, getWeekStart } from './testingUtils';
-import { UserProfile, WeeklyStats, LeaderboardEntry } from './types';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EXERCISES, ExerciseType, messagesExercises, EXERCISE_MUSCLE_GROUP_POINTS } from './types';
+import { SimpleWorkoutSession } from './exerciseTrackingService';
 
-interface LeaderboardScreenProps {
-    onNavigateToProfile?: () => void;
+interface LeaderboardEntry {
+    exercise: EXERCISES;
+    totalDuration: number;
+    totalReps: number;
+    isUnlocked: boolean;
 }
 
-function LeaderboardScreen({ onNavigateToProfile }: LeaderboardScreenProps) {
-    const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState<'week' | 'month' | 'all'>('week');
+interface LeaderboardStats {
+    totalWorkouts: number;
+    totalWorkoutTime: number; // total seconds across all exercises
+    exerciseLeaderboard: LeaderboardEntry[];
+}
 
-    const loadLeaderboardData = async () => {
-        try {
-            setLoading(true);
+class LeaderboardCalculator {
+    static async calculateStats(): Promise<LeaderboardStats> {
+        const sessions = await this.loadAllSessions();
+        const exerciseMap = new Map<EXERCISES, LeaderboardEntry>();
+        let totalWorkoutTime = 0;
 
-            // Load current user profile
-            const profile = await loadUserProfile();
-            setCurrentUser(profile);
-
-            // Load all weekly stats
-            const allStats = await loadAllWeeklyStats();
-
-            // For now, create a simple leaderboard from weekly stats
-            // In a real app, this would aggregate multiple users
-            const virtualDate = await getVirtualDate();
-            const currentWeekStart = getWeekStart(virtualDate);
-
-            let filteredStats: WeeklyStats[] = [];
-
-            if (filter === 'week') {
-                // Current week only
-                filteredStats = allStats.filter(stat =>
-                    stat.weekStartDate.getTime() === currentWeekStart.getTime()
-                );
-            } else if (filter === 'month') {
-                // Last 4 weeks
-                const fourWeeksAgo = new Date(currentWeekStart);
-                fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-                filteredStats = allStats.filter(stat =>
-                    stat.weekStartDate >= fourWeeksAgo
-                );
-            } else {
-                // All time
-                filteredStats = allStats;
+        // Инициализация (исключая UNKNOWN)
+        Object.values(EXERCISES).forEach(exercise => {
+            if (exercise !== EXERCISES.UNKNOWN) {
+                exerciseMap.set(exercise, {
+                    exercise,
+                    totalDuration: 0,
+                    totalReps: 0,
+                    isUnlocked: false,
+                });
             }
+        });
 
-            // Create leaderboard entries (for single user demo)
-            const entries: LeaderboardEntry[] = filteredStats.map((stat, index) => ({
-                userId: profile?.id || 'user',
-                userName: profile?.name || 'Спартанец',
-                nraScore: stat.nraScore,
-                streakWeeks: profile?.currentStreakWeeks || 0,
-                rank: index + 1,
-                weekStartDate: stat.weekStartDate,
-            }));
+        // Подсчёт
+        sessions.forEach(session => {
+            Object.entries(session.exercises).forEach(([exerciseName, record]) => {
+                const exercise = exerciseName as EXERCISES;
 
-            // Sort by NRA score descending
-            entries.sort((a, b) => b.nraScore - a.nraScore);
+                // Пропускаем UNKNOWN
+                if (exercise === EXERCISES.UNKNOWN) return;
 
-            // Update ranks
-            entries.forEach((entry, index) => {
-                entry.rank = index + 1;
+                const entry = exerciseMap.get(exercise);
+                if (!entry) return;
+
+                entry.totalDuration += record.duration;
+                totalWorkoutTime += record.duration;
+                if (record.reps) entry.totalReps += record.reps;
+
+                const unlockCondition = EXERCISE_MUSCLE_GROUP_POINTS[exercise].conditionToUnlock;
+                const currentValue = unlockCondition.type === 'reps' ? entry.totalReps : entry.totalDuration;
+                entry.isUnlocked = currentValue >= unlockCondition.value;
             });
+        });
 
-            setLeaderboard(entries);
+        // Фильтруем упражнения с нулевой активностью и сортируем
+        const exerciseLeaderboard = Array.from(exerciseMap.values())
+            .filter(entry => entry.totalDuration > 0 || entry.totalReps > 0)
+            .sort((a, b) => a.isUnlocked === b.isUnlocked ? b.totalDuration - a.totalDuration : (a.isUnlocked ? -1 : 1));
 
-            console.log('[LeaderboardScreen] Loaded leaderboard:', {
-                filter,
-                entriesCount: entries.length,
-                topScore: entries[0]?.nraScore || 0,
-            });
-        } catch (error) {
-            console.error('[LeaderboardScreen] Error loading leaderboard:', error);
-            Alert.alert('Error', 'Failed to load leaderboard');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        loadLeaderboardData();
-    }, [filter]);
-
-    if (loading) {
-        return (
-            <View style={styles.container}>
-                <Text style={styles.loadingText}>Loading leaderboard...</Text>
-            </View>
-        );
+        return { totalWorkouts: sessions.length, totalWorkoutTime, exerciseLeaderboard };
     }
 
-    const currentUserEntry = leaderboard.find(entry => entry.userId === currentUser?.id);
+    private static async loadAllSessions(): Promise<SimpleWorkoutSession[]> {
+        try {
+            const keys = await AsyncStorage.getAllKeys();
+            const sessionKeys = keys.filter(key => key.startsWith('session_'));
+            const sessions: SimpleWorkoutSession[] = [];
 
-    return (
-        <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>🏆 Таблица лидеров</Text>
-                <Text style={styles.headerSubtitle}>
-                    {filter === 'week' && 'Текущая неделя'}
-                    {filter === 'month' && 'Последний месяц'}
-                    {filter === 'all' && 'Все время'}
-                </Text>
-            </View>
+            for (const key of sessionKeys) {
+                const sessionData = await AsyncStorage.getItem(key);
+                if (sessionData) sessions.push(JSON.parse(sessionData));
+            }
+            return sessions;
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            return [];
+        }
+    }
 
-            {/* Filter Buttons */}
-            <View style={styles.filterContainer}>
-                <TouchableOpacity
-                    style={[styles.filterButton, filter === 'week' && styles.filterButtonActive]}
-                    onPress={() => setFilter('week')}
-                >
-                    <Text style={[styles.filterText, filter === 'week' && styles.filterTextActive]}>
-                        Неделя
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.filterButton, filter === 'month' && styles.filterButtonActive]}
-                    onPress={() => setFilter('month')}
-                >
-                    <Text style={[styles.filterText, filter === 'month' && styles.filterTextActive]}>
-                        Месяц
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.filterButton, filter === 'all' && styles.filterButtonActive]}
-                    onPress={() => setFilter('all')}
-                >
-                    <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
-                        Все время
-                    </Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* Current User Position */}
-            {currentUserEntry && (
-                <View style={styles.currentUserCard}>
-                    <Text style={styles.currentUserLabel}>Ваша позиция</Text>
-                    <View style={styles.currentUserInfo}>
-                        <View style={styles.rankBadge}>
-                            <Text style={styles.rankText}>#{currentUserEntry.rank}</Text>
-                        </View>
-                        <View style={styles.currentUserStats}>
-                            <Text style={styles.currentUserName}>{currentUserEntry.userName}</Text>
-                            <Text style={styles.currentUserScore}>
-                                НРА: {currentUserEntry.nraScore} • Стрик: {currentUserEntry.streakWeeks} нед
-                            </Text>
-                        </View>
-                    </View>
-                </View>
-            )}
-
-            {/* Leaderboard List */}
-            <ScrollView style={styles.leaderboardList}>
-                {leaderboard.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>Нет данных для отображения</Text>
-                        <Text style={styles.emptySubtext}>
-                            Завершите тренировку, чтобы появиться в таблице лидеров
-                        </Text>
-                    </View>
-                ) : (
-                    leaderboard.map((entry, index) => {
-                        const isCurrentUser = entry.userId === currentUser?.id;
-                        const isTopThree = entry.rank <= 3;
-
-                        return (
-                            <View
-                                key={`${entry.userId}-${entry.weekStartDate.getTime()}`}
-                                style={[
-                                    styles.leaderboardItem,
-                                    isCurrentUser && styles.leaderboardItemCurrent,
-                                    isTopThree && styles.leaderboardItemTop,
-                                ]}
-                            >
-                                <View style={styles.rankContainer}>
-                                    {entry.rank === 1 && <Text style={styles.medal}>🥇</Text>}
-                                    {entry.rank === 2 && <Text style={styles.medal}>🥈</Text>}
-                                    {entry.rank === 3 && <Text style={styles.medal}>🥉</Text>}
-                                    {entry.rank > 3 && (
-                                        <Text style={styles.rankNumber}>#{entry.rank}</Text>
-                                    )}
-                                </View>
-
-                                <View style={styles.userInfo}>
-                                    <Text style={[styles.userName, isCurrentUser && styles.userNameCurrent]}>
-                                        {entry.userName}
-                                        {isCurrentUser && ' (Вы)'}
-                                    </Text>
-                                    <Text style={styles.userStats}>
-                                        Стрик: {entry.streakWeeks} нед
-                                        {filter !== 'week' && ` • ${new Date(entry.weekStartDate).toLocaleDateString('ru', { month: 'short', day: 'numeric' })}`}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.scoreContainer}>
-                                    <Text style={[styles.score, isTopThree && styles.scoreTop]}>
-                                        {entry.nraScore}
-                                    </Text>
-                                    <Text style={styles.scoreLabel}>НРА</Text>
-                                </View>
-                            </View>
-                        );
-                    })
-                )}
-            </ScrollView>
-
-            {/* Navigation Buttons */}
-            <View style={styles.navigationButtons}>
-                <TouchableOpacity
-                    style={[styles.navButton, styles.navButtonPrimary]}
-                    onPress={onNavigateToProfile}
-                >
-                    <Text style={styles.navButtonText}>👤 Профиль</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.navButton, styles.navButtonInfo]}
-                    onPress={loadLeaderboardData}
-                >
-                    <Text style={styles.navButtonText}>🔄 Обновить</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
+    static formatDuration(seconds: number): string {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        return h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
 }
 
+export const LeaderboardScreen: React.FC = () => {
+    const [stats, setStats] = useState<LeaderboardStats | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        (async () => {
+            setStats(await LeaderboardCalculator.calculateStats());
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) return <View style={styles.container}><ActivityIndicator size="large" color="#007AFF" /></View>;
+    if (!stats) return <View style={styles.container}><Text style={styles.errorText}>Не удалось загрузить статистику</Text></View>;
+
+    return (
+        <ScrollView style={styles.container}>
+            <View style={styles.header}>
+                <Text style={styles.title}>Таблица лидеров</Text>
+            </View>
+
+            <View style={styles.statsCard}>
+                <Text style={styles.cardTitle}>Общая статистика</Text>
+                <View style={styles.statsRow}>
+                    <Text style={styles.statsLabel}>Всего тренировок:</Text>
+                    <Text style={styles.statsValue}>{stats.totalWorkouts}</Text>
+                </View>
+                <View style={styles.statsRow}>
+                    <Text style={styles.statsLabel}>Общее время:</Text>
+                    <Text style={styles.statsValue}>{LeaderboardCalculator.formatDuration(stats.totalWorkoutTime)}</Text>
+                </View>
+            </View>
+
+            <View style={styles.statsCard}>
+                <Text style={styles.cardTitle}>Упражнения</Text>
+                {stats.exerciseLeaderboard.map((entry, index) => {
+                    const isRepBased = ExerciseType[entry.exercise] === 'reps';
+
+                    return (
+                        <View key={entry.exercise} style={[styles.exerciseCard, !entry.isUnlocked && styles.exerciseCardLocked]}>
+                            <View style={styles.exerciseHeader}>
+                                <Text style={styles.exerciseRank}>#{index + 1}</Text>
+                                <Text style={styles.exerciseName}>{messagesExercises.en[entry.exercise]}</Text>
+                                {entry.isUnlocked && <Text style={styles.unlockedBadge}>✓</Text>}
+                            </View>
+
+                            <View style={styles.exerciseStats}>
+                                <Text style={styles.exerciseStatValue}>
+                                    {LeaderboardCalculator.formatDuration(entry.totalDuration)}
+                                </Text>
+                                {isRepBased && <Text style={styles.exerciseStatValue}>{entry.totalReps} reps</Text>}
+                            </View>
+                        </View>
+                    );
+                })}
+            </View>
+        </ScrollView>
+    );
+};
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#1a1a1a',
-    },
-    loadingText: {
-        color: 'white',
-        fontSize: 18,
-        textAlign: 'center',
-        marginTop: 100,
-    },
-    header: {
-        backgroundColor: '#2a2a2a',
-        padding: 20,
-        alignItems: 'center',
-    },
-    headerTitle: {
-        color: 'white',
-        fontSize: 28,
-        fontWeight: 'bold',
-    },
-    headerSubtitle: {
-        color: '#999',
-        fontSize: 14,
-        marginTop: 4,
-    },
-    filterContainer: {
-        flexDirection: 'row',
-        padding: 10,
-        gap: 10,
-    },
-    filterButton: {
-        flex: 1,
-        padding: 12,
-        borderRadius: 8,
-        backgroundColor: '#2a2a2a',
-        alignItems: 'center',
-    },
-    filterButtonActive: {
-        backgroundColor: '#4a9eff',
-    },
-    filterText: {
-        color: '#999',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    filterTextActive: {
-        color: 'white',
-    },
-    currentUserCard: {
-        backgroundColor: '#2a2a2a',
-        margin: 10,
-        padding: 15,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#4a9eff',
-    },
-    currentUserLabel: {
-        color: '#4a9eff',
-        fontSize: 12,
-        fontWeight: 'bold',
-        marginBottom: 10,
-    },
-    currentUserInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    rankBadge: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: '#4a9eff',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    rankText: {
-        color: 'white',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    currentUserStats: {
-        marginLeft: 15,
-        flex: 1,
-    },
-    currentUserName: {
-        color: 'white',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    currentUserScore: {
-        color: '#999',
-        fontSize: 14,
-        marginTop: 4,
-    },
-    leaderboardList: {
-        flex: 1,
-        padding: 10,
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        padding: 40,
-    },
-    emptyText: {
-        color: '#666',
-        fontSize: 16,
-        textAlign: 'center',
-    },
-    emptySubtext: {
-        color: '#444',
-        fontSize: 14,
-        textAlign: 'center',
-        marginTop: 8,
-    },
-    leaderboardItem: {
-        flexDirection: 'row',
-        backgroundColor: '#2a2a2a',
-        padding: 15,
-        borderRadius: 10,
-        marginBottom: 10,
-        alignItems: 'center',
-    },
-    leaderboardItemCurrent: {
-        borderWidth: 2,
-        borderColor: '#4a9eff',
-    },
-    leaderboardItemTop: {
-        backgroundColor: '#2d2d2d',
-    },
-    rankContainer: {
-        width: 50,
-        alignItems: 'center',
-    },
-    medal: {
-        fontSize: 32,
-    },
-    rankNumber: {
-        color: '#999',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    userInfo: {
-        flex: 1,
-        marginLeft: 15,
-    },
-    userName: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    userNameCurrent: {
-        color: '#4a9eff',
-    },
-    userStats: {
-        color: '#999',
-        fontSize: 12,
-        marginTop: 4,
-    },
-    scoreContainer: {
-        alignItems: 'center',
-    },
-    score: {
-        color: '#4a9eff',
-        fontSize: 24,
-        fontWeight: 'bold',
-    },
-    scoreTop: {
-        color: '#ffd700',
-    },
-    scoreLabel: {
-        color: '#666',
-        fontSize: 10,
-    },
-    navigationButtons: {
-        flexDirection: 'row',
-        padding: 10,
-        gap: 10,
-    },
-    navButton: {
-        flex: 1,
-        padding: 15,
-        borderRadius: 10,
-        alignItems: 'center',
-    },
-    navButtonPrimary: {
-        backgroundColor: '#4a9eff',
-    },
-    navButtonInfo: {
-        backgroundColor: '#17a2b8',
-    },
-    navButtonText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
+    container: { flex: 1, backgroundColor: '#f5f5f5' },
+    header: { padding: 20, backgroundColor: '#007AFF' },
+    title: { fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center' },
+    statsCard: { backgroundColor: '#fff', margin: 10, padding: 15, borderRadius: 10, elevation: 3 },
+    cardTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, color: '#333' },
+    statsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 5 },
+    statsLabel: { fontSize: 16, color: '#666', fontWeight: '500' },
+    statsValue: { fontSize: 18, fontWeight: 'bold', color: '#007AFF' },
+    exerciseCard: { backgroundColor: '#f9f9f9', padding: 12, marginVertical: 6, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#007AFF' },
+    exerciseCardLocked: { borderLeftColor: '#ccc', opacity: 0.7 },
+    exerciseHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    exerciseRank: { fontSize: 18, fontWeight: 'bold', color: '#007AFF', marginRight: 10, minWidth: 40 },
+    exerciseName: { fontSize: 16, fontWeight: '600', color: '#333', flex: 1 },
+    unlockedBadge: { fontSize: 20, color: '#4CAF50' },
+    exerciseStats: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 8 },
+    exerciseStatValue: { fontSize: 14, fontWeight: 'bold', color: '#333' },
+    errorText: { fontSize: 16, color: '#999', textAlign: 'center' },
 });
 
 export default LeaderboardScreen;

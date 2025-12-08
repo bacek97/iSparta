@@ -63,11 +63,15 @@ class PoseLandmarks(reactContext: ReactApplicationContext) : ReactContextBaseJav
                 val poseMap = Arguments.createArray()
                 for ((index, landmark) in poseLandmarks.withIndex()) {
                     val landmarkMap = Arguments.createMap()
-                    landmarkMap.putInt("keypoint", index)
+
                     landmarkMap.putDouble("x", landmark.x().toDouble())
                     landmarkMap.putDouble("y", landmark.y().toDouble())
                     landmarkMap.putDouble("z", landmark.z().toDouble())
                     landmarkMap.putDouble("visibility", landmark.visibility().get().toDouble())
+                    // Add presence field only if supported by the model
+                    if (landmark.presence().isPresent) {
+                        landmarkMap.putDouble("presence", landmark.presence().get().toDouble())
+                    }
                     poseMap.pushMap(landmarkMap)
                 }
                 landmarksArray.pushArray(poseMap)
@@ -146,11 +150,15 @@ class PoseLandmarks(reactContext: ReactApplicationContext) : ReactContextBaseJav
                 val poseMap = Arguments.createArray()
                 for ((index, landmark) in poseLandmarks.withIndex()) {
                     val landmarkMap = Arguments.createMap()
-                    landmarkMap.putInt("keypoint", index)
+
                     landmarkMap.putDouble("x", landmark.x().toDouble())
                     landmarkMap.putDouble("y", landmark.y().toDouble())
                     landmarkMap.putDouble("z", landmark.z().toDouble())
                     landmarkMap.putDouble("visibility", landmark.visibility().get().toDouble())
+                    // Add presence field only if supported by the model
+                    if (landmark.presence().isPresent) {
+                        landmarkMap.putDouble("presence", landmark.presence().get().toDouble())
+                    }
                     poseMap.pushMap(landmarkMap)
                 }
                 landmarksArray.pushArray(poseMap)

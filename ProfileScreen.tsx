@@ -8,54 +8,97 @@ import {
     Alert,
     Dimensions,
 } from 'react-native';
-import { loadUserProfile, loadWorkoutSessions, getStorageInfo, clearAllData, createDefaultProfile } from './storageService';
-import { getCurrentWeekStats, getNRAHistory } from './nraCalculationService';
-import { getVirtualDate, getDateInfo } from './testingUtils';
-import { UserProfile, WeeklyStats, WorkoutSession, getExerciseConfig } from './types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { messagesExercises, EXERCISES } from './types';
+import { SimpleWorkoutSession } from './exerciseTrackingService';
 
 interface ProfileScreenProps {
     onNavigateToLeaderboard?: () => void;
     onNavigateToWorkout?: () => void;
 }
 
+interface SessionDisplay {
+    id: string;
+    date: Date;
+    totalDurationSeconds: number;
+    exercises: Array<{
+        exerciseName: EXERCISES;
+        reps?: number;
+        durationSeconds: number;
+    }>;
+}
+
 function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: ProfileScreenProps) {
-    const [profile, setProfile] = useState<UserProfile | null>(null);
-    const [currentWeek, setCurrentWeek] = useState<WeeklyStats | null>(null);
-    const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
-    const [nraHistory, setNraHistory] = useState<WeeklyStats[]>([]);
-    const [dateInfo, setDateInfo] = useState<string>('');
+    const [recentSessions, setRecentSessions] = useState<SessionDisplay[]>([]);
+    const [totalWorkouts, setTotalWorkouts] = useState<number>(0);
+    const [totalReps, setTotalReps] = useState<number>(0);
+    const [totalMinutes, setTotalMinutes] = useState<number>(0);
     const [loading, setLoading] = useState(true);
 
     const loadData = async () => {
         try {
             setLoading(true);
 
-            // Load profile
-            const userProfile = await loadUserProfile();
-            setProfile(userProfile);
+            // Load SimpleWorkoutSession data from AsyncStorage
+            const keys = await AsyncStorage.getAllKeys();
+            const sessionKeys = keys.filter(key => key.startsWith('session_'));
 
-            // Load current week stats
-            const weekStats = await getCurrentWeekStats();
-            setCurrentWeek(weekStats);
+            const sessions: SimpleWorkoutSession[] = [];
+            for (const key of sessionKeys) {
+                const sessionData = await AsyncStorage.getItem(key);
+                if (sessionData) {
+                    sessions.push(JSON.parse(sessionData));
+                }
+            }
 
-            // Load recent sessions (last 10)
-            const allSessions = await loadWorkoutSessions();
-            const recent = allSessions
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            // Convert SimpleWorkoutSession to SessionDisplay format
+            const displaySessions: SessionDisplay[] = sessions.map(session => {
+                const exercises: Array<{
+                    exerciseName: EXERCISES;
+                    reps?: number;
+                    durationSeconds: number;
+                }> = [];
+
+                // Extract exercises with non-zero activity
+                Object.entries(session.exercises).forEach(([exerciseName, record]) => {
+                    if (record.duration > 0 || (record.reps && record.reps > 0)) {
+                        exercises.push({
+                            exerciseName: exerciseName as EXERCISES,
+                            reps: record.reps,
+                            durationSeconds: record.duration
+                        });
+                    }
+                });
+
+                const totalDuration = Object.values(session.exercises).reduce(
+                    (sum, ex) => sum + ex.duration, 0
+                );
+
+                return {
+                    id: session.sessionId,
+                    date: new Date(session.startTime),
+                    totalDurationSeconds: totalDuration,
+                    exercises
+                };
+            });
+
+            // Sort by date and take last 10
+            const recent = displaySessions
+                .sort((a, b) => b.date.getTime() - a.date.getTime())
                 .slice(0, 10);
             setRecentSessions(recent);
 
-            // Load NRA history (last 8 weeks)
-            const history = await getNRAHistory(8);
-            setNraHistory(history);
+            // Calculate totals
+            setTotalWorkouts(sessions.length);
+            const totalRepsCount = displaySessions.reduce((sum, session) => {
+                return sum + session.exercises.reduce((exSum, ex) => exSum + (ex.reps || 0), 0);
+            }, 0);
+            setTotalReps(totalRepsCount);
 
-            // Get date info
-            const info = await getDateInfo();
-            setDateInfo(info);
+            const totalSeconds = displaySessions.reduce((sum, session) => sum + session.totalDurationSeconds, 0);
+            setTotalMinutes(Math.floor(totalSeconds / 60));
 
-            // Get storage info for debugging
-            const storageInfo = await getStorageInfo();
-            console.log('[ProfileScreen] Storage info:', storageInfo);
+            console.log('[ProfileScreen] Loaded', sessions.length, 'sessions');
         } catch (error) {
             console.error('[ProfileScreen] Error loading data:', error);
             Alert.alert('Error', 'Failed to load profile data');
@@ -79,8 +122,10 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await clearAllData();
-                            await createDefaultProfile();
+                            // Clear all session_* keys
+                            const keys = await AsyncStorage.getAllKeys();
+                            const sessionKeys = keys.filter(key => key.startsWith('session_'));
+                            await AsyncStorage.multiRemove(sessionKeys);
                             await loadData();
                             Alert.alert('Успешно', 'Вся статистика была очищена.');
                         } catch (error) {
@@ -107,17 +152,6 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
         );
     }
 
-    if (!profile) {
-        return (
-            <View style={styles.container}>
-                <Text style={styles.errorText}>No profile found</Text>
-                <TouchableOpacity style={styles.button} onPress={loadData}>
-                    <Text style={styles.buttonText}>Retry</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
-
     const screenWidth = Dimensions.get('window').width;
 
     return (
@@ -125,111 +159,34 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
             {/* Header */}
             <View style={styles.header}>
                 <View style={styles.avatarContainer}>
-                    <Text style={styles.avatarText}>{profile.name.charAt(0).toUpperCase()}</Text>
+                    <Text style={styles.avatarText}>S</Text>
                 </View>
                 <View style={styles.headerInfo}>
-                    <Text style={styles.nameText}>{profile.name}</Text>
-                    <Text style={styles.dateText}>{dateInfo}</Text>
+                    <Text style={styles.nameText}>iSparta Profile</Text>
+                    <Text style={styles.dateText}>Workout Statistics</Text>
                 </View>
-            </View>
-
-            {/* NRA Score Card */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Недельный Рейтинг Активности (НРА)</Text>
-                <View style={styles.nraScoreContainer}>
-                    <Text style={styles.nraScore}>{profile.currentNRA}</Text>
-                    <Text style={styles.nraLabel}>текущий НРА</Text>
-                </View>
-
-                {currentWeek && (
-                    <View style={styles.nraComponents}>
-                        <View style={styles.nraComponent}>
-                            <Text style={styles.componentValue}>{currentWeek.nraComponents.wds.toFixed(0)}</Text>
-                            <Text style={styles.componentLabel}>WDS</Text>
-                            <Text style={styles.componentSubLabel}>Дисциплина</Text>
-                        </View>
-                        <View style={styles.nraComponent}>
-                            <Text style={styles.componentValue}>{currentWeek.nraComponents.multiplier.toFixed(2)}x</Text>
-                            <Text style={styles.componentLabel}>МС</Text>
-                            <Text style={styles.componentSubLabel}>Множитель</Text>
-                        </View>
-                        <View style={styles.nraComponent}>
-                            <Text style={styles.componentValue}>{currentWeek.nraComponents.was.toFixed(0)}</Text>
-                            <Text style={styles.componentLabel}>WAS</Text>
-                            <Text style={styles.componentSubLabel}>Объем</Text>
-                        </View>
-                        <View style={styles.nraComponent}>
-                            <Text style={styles.componentValue}>{currentWeek.nraComponents.wms.toFixed(0)}</Text>
-                            <Text style={styles.componentLabel}>WMS</Text>
-                            <Text style={styles.componentSubLabel}>Мастерство</Text>
-                        </View>
-                    </View>
-                )}
             </View>
 
             {/* Stats Cards */}
             <View style={styles.statsRow}>
                 <View style={[styles.statCard, { flex: 1 }]}>
-                    <Text style={styles.statValue}>{profile.currentStreakWeeks}</Text>
-                    <Text style={styles.statLabel}>Стрик (недель)</Text>
+                    <Text style={styles.statValue}>{totalWorkouts}</Text>
+                    <Text style={styles.statLabel}>Тренировок</Text>
                 </View>
                 <View style={[styles.statCard, { flex: 1 }]}>
-                    <Text style={styles.statValue}>{profile.totalWorkouts}</Text>
-                    <Text style={styles.statLabel}>Тренировок</Text>
+                    <Text style={styles.statValue}>{totalReps}</Text>
+                    <Text style={styles.statLabel}>Повторений</Text>
                 </View>
             </View>
 
             <View style={styles.statsRow}>
                 <View style={[styles.statCard, { flex: 1 }]}>
-                    <Text style={styles.statValue}>{profile.totalReps}</Text>
-                    <Text style={styles.statLabel}>Повторений</Text>
-                </View>
-                <View style={[styles.statCard, { flex: 1 }]}>
-                    <Text style={styles.statValue}>{profile.totalMinutes}</Text>
+                    <Text style={styles.statValue}>{totalMinutes}</Text>
                     <Text style={styles.statLabel}>Минут</Text>
                 </View>
             </View>
 
-            {/* Current Week Progress */}
-            {currentWeek && (
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Текущая неделя</Text>
-                    <View style={styles.weekInfo}>
-                        <Text style={styles.weekText}>
-                            {new Date(currentWeek.weekStartDate).toLocaleDateString()} - {new Date(currentWeek.weekEndDate).toLocaleDateString()}
-                        </Text>
-                        <Text style={styles.weekStat}>Активных дней: {currentWeek.daysActive}/7</Text>
-                        <Text style={styles.weekStat}>Объем: {currentWeek.totalVolume}</Text>
-                        <Text style={styles.weekStat}>
-                            Группы мышц: {currentWeek.muscleGroupsWorked.join(', ') || 'Нет'}
-                        </Text>
-                    </View>
-                </View>
-            )}
 
-            {/* NRA History Chart (Simple) */}
-            {nraHistory.length > 0 && (
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>История НРА (последние 8 недель)</Text>
-                    <View style={styles.chartContainer}>
-                        {nraHistory.map((week, index) => {
-                            const maxNRA = Math.max(...nraHistory.map(w => w.nraScore), 100);
-                            const barHeight = (week.nraScore / maxNRA) * 150;
-
-                            return (
-                                <View key={index} style={styles.chartBar}>
-                                    <View style={[styles.bar, { height: barHeight }]}>
-                                        <Text style={styles.barValue}>{week.nraScore}</Text>
-                                    </View>
-                                    <Text style={styles.barLabel}>
-                                        {new Date(week.weekStartDate).toLocaleDateString('ru', { month: 'short', day: 'numeric' })}
-                                    </Text>
-                                </View>
-                            );
-                        })}
-                    </View>
-                </View>
-            )}
 
             {/* Recent Sessions */}
             <View style={styles.card}>
@@ -253,8 +210,7 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
                             </View>
                             <View style={{ marginTop: 4 }}>
                                 {session.exercises.map((exercise, idx) => {
-                                    const config = getExerciseConfig(exercise.exerciseName);
-                                    const displayName = config ? config.displayName : exercise.exerciseName;
+                                    const displayName = messagesExercises.en[exercise.exerciseName] || exercise.exerciseName;
                                     const details = [];
                                     if (exercise.reps) details.push(`${exercise.reps} повт.`);
                                     if (exercise.durationSeconds) details.push(`${Math.round(exercise.durationSeconds)} сек.`);

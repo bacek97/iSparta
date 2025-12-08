@@ -1,8 +1,11 @@
-import { EXERCISES, QueueItem } from './types';
+import { EXERCISES, ExerciseType, QueueItem } from './types';
+import { BodyAngles, ExerciseCounter, PushupsCounter, SquatsCounter } from './deepfitUtils';
 
 export interface SimpleExerciseRecord {
     duration: number;      // seconds
     reps?: number;         // optional, for rep-based exercises
+    direction?: number;    // optional, for rep-based exercises
+    exerciseCounter?: ExerciseCounter;
 }
 
 export interface ExerciseWithReps extends SimpleExerciseRecord {
@@ -16,14 +19,28 @@ export interface SimpleWorkoutSession {
     exercises: Record<EXERCISES, SimpleExerciseRecord>;
 }
 
+
+function isNumberArray(args: unknown[]): args is number[] {
+    return args.every(a => typeof a === 'number');
+}
+function hasNumberFields(
+    ex: SimpleExerciseRecord
+): ex is Required<SimpleExerciseRecord> {
+    return typeof ex?.reps === 'number' && typeof ex?.direction === 'number';
+}
+
 export class WorkoutSession {
     s: SimpleWorkoutSession;
     queue: LatestClassifications;
     constructor() {
+        console.log('constructorWorkoutSession');
         const initialExercises = Object.values(EXERCISES).reduce((acc, exercise) => {
             acc[exercise] = {
                 duration: 0,
-                reps: 0
+                reps: (ExerciseType[exercise] === 'reps') ? 0 : undefined,
+                direction: (ExerciseType[exercise] === 'reps') ? 0 : undefined,
+                exerciseCounter: (exercise === EXERCISES.PUSHUPS) ? new PushupsCounter(this.incrementReps.bind(this, exercise)) :
+                    (exercise === EXERCISES.SQUATS) ? new SquatsCounter(this.incrementReps.bind(this, exercise)) : undefined
             };
             return acc;
         }, {} as Record<EXERCISES, SimpleExerciseRecord>);
@@ -36,17 +53,39 @@ export class WorkoutSession {
         this.queue = new LatestClassifications();
     }
 
+    calculate(exercise: EXERCISES, angles: BodyAngles): { duration: number; reps?: number; percent?: number } {
+        console.log('exercise', exercise);
+        let percent = this.s.exercises[exercise].exerciseCounter?.checkAngles(angles);
+        console.log('percent2', percent);
+        return {
+            duration: this.s.exercises[exercise].duration,
+            reps: this.s.exercises[exercise].reps,
+            percent: percent
+        };
+    }
+
     getJson(): string {
         this.s.endTime = new Date();
+        // const save = this.s.exercises.filter((item) => item.duration > 30);
+        for (const [key, value] of Object.entries(this.s.exercises)) {
+            if (value.duration < 30) {
+                delete this.s.exercises[key];
+            }
+            // delete this.s.exercises[key].exerciseCounter?.checkpoints;
+        }
         return JSON.stringify(this.s);
     }
     incrementDuration(exercise: EXERCISES = this.queue.getSmoothedValue()): void {
         this.s.exercises[exercise].duration += 1;
     }
     incrementReps(exercise: EXERCISES = this.queue.getSmoothedValue()): void {
-        if (typeof (this.s.exercises[exercise].reps) === 'number') {
-            this.s.exercises[exercise].reps += 1;
+        // if (exercise === this.queue.getSmoothedValue()) {
+        const ex = this.s.exercises[exercise];
+        if (hasNumberFields(ex)) {
+            ex.reps += 1;
+            // ex.direction = (ex.direction + 1) % checkpoints[exercise].length;
         }
+        // }
     }
     addClassification(qi: QueueItem): void {
         this.queue.add(qi);
