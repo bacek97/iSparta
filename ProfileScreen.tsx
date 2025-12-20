@@ -11,10 +11,22 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { messagesExercises, EXERCISES } from './types';
 import { SimpleWorkoutSession } from './exerciseTrackingService';
+import WeeklyStreakCalendar from './WeeklyStreakCalendar';
+import { getTodaySteps, subscribeToSteps, startStepCounter, getStepsForDate } from './stepCounterService';
+import { getVirtualDate } from './testingUtils';
+import { filterSessionsByDate, getRunningKilometersForDate } from './profileHelpers';
+
+// Optional navigation import - don't crash if not available
+let useNavigation: (() => any) | null = null;
+try {
+    useNavigation = require('@react-navigation/native').useNavigation;
+} catch (e) {
+    console.log('Navigation not available');
+}
 
 interface ProfileScreenProps {
+    onNavigateToHome?: () => void;
     onNavigateToLeaderboard?: () => void;
-    onNavigateToWorkout?: () => void;
 }
 
 interface SessionDisplay {
@@ -28,12 +40,27 @@ interface SessionDisplay {
     }>;
 }
 
-function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: ProfileScreenProps) {
+function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScreenProps = {}) {
+    // Try to get navigation from context, but don't crash if not available
+    let navigation: any = null;
+    try {
+        if (useNavigation) {
+            navigation = useNavigation();
+        }
+    } catch (e) {
+        // Navigation context not available - that's okay
+    }
+
     const [recentSessions, setRecentSessions] = useState<SessionDisplay[]>([]);
+    const [allSessions, setAllSessions] = useState<SimpleWorkoutSession[]>([]);
     const [totalWorkouts, setTotalWorkouts] = useState<number>(0);
     const [totalReps, setTotalReps] = useState<number>(0);
     const [totalMinutes, setTotalMinutes] = useState<number>(0);
+    const [todaySteps, setTodaySteps] = useState<number>(0);
     const [loading, setLoading] = useState(true);
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    const [selectedDateSteps, setSelectedDateSteps] = useState<number>(0);
+    const [selectedDateKm, setSelectedDateKm] = useState<number>(0);
 
     const loadData = async () => {
         try {
@@ -87,6 +114,7 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
                 .sort((a, b) => b.date.getTime() - a.date.getTime())
                 .slice(0, 10);
             setRecentSessions(recent);
+            setAllSessions(sessions);
 
             // Calculate totals
             setTotalWorkouts(sessions.length);
@@ -98,6 +126,10 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
             const totalSeconds = displaySessions.reduce((sum, session) => sum + session.totalDurationSeconds, 0);
             setTotalMinutes(Math.floor(totalSeconds / 60));
 
+            // Load today's steps
+            const steps = await getTodaySteps();
+            setTodaySteps(steps);
+
             console.log('[ProfileScreen] Loaded', sessions.length, 'sessions');
         } catch (error) {
             console.error('[ProfileScreen] Error loading data:', error);
@@ -106,6 +138,75 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
             setLoading(false);
         }
     };
+
+    // Subscribe to step counter updates
+    useEffect(() => {
+        console.log('[ProfileScreen] Starting step counter subscription');
+
+        // Start step counter and set initial value
+        startStepCounter().then((initialSteps) => {
+            console.log('[ProfileScreen] Initial steps:', initialSteps);
+            setTodaySteps(initialSteps);
+        });
+
+        const unsubscribe = subscribeToSteps((steps) => {
+            console.log('[ProfileScreen] Steps updated:', steps);
+            setTodaySteps(steps);
+        });
+
+        return () => {
+            console.log('[ProfileScreen] Unsubscribing from step counter');
+            unsubscribe();
+        };
+    }, []);
+
+    // Initialize selectedDate from virtual date - also reload on focus
+    useEffect(() => {
+        const loadVirtualDate = async () => {
+            const virtualDate = await getVirtualDate();
+            console.log('[ProfileScreen] Setting selectedDate to virtual date:', virtualDate);
+            setSelectedDate(virtualDate);
+
+            // Also load steps for virtual date
+            const steps = await getStepsForDate(virtualDate);
+            setSelectedDateSteps(steps);
+        };
+
+        loadVirtualDate();
+
+        // If navigation is available, reload on focus
+        if (navigation) {
+            const unsubscribe = navigation.addListener('focus', () => {
+                console.log('[ProfileScreen] Screen focused - reloading virtual date');
+                loadVirtualDate();
+                loadData();
+            });
+            return unsubscribe;
+        }
+    }, [navigation]);
+
+    // Handle date selection from calendar
+    const handleDateSelect = async (date: Date) => {
+        console.log('[ProfileScreen] Date selected:', date);
+        setSelectedDate(date);
+
+        // Load steps for selected date
+        const steps = await getStepsForDate(date);
+        setSelectedDateSteps(steps);
+
+        // Calculate km for selected date
+        const km = getRunningKilometersForDate(allSessions, date);
+        setSelectedDateKm(km);
+
+        console.log('[ProfileScreen] Selected date data - steps:', steps, 'km:', km);
+    };
+
+    // Update selected date data when allSessions changes
+    useEffect(() => {
+        if (allSessions.length > 0) {
+            handleDateSelect(selectedDate);
+        }
+    }, [allSessions]);
 
     const handleClearData = () => {
         Alert.alert(
@@ -171,22 +272,71 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
             <View style={styles.statsRow}>
                 <View style={[styles.statCard, { flex: 1 }]}>
                     <Text style={styles.statValue}>{totalWorkouts}</Text>
-                    <Text style={styles.statLabel}>Тренировок</Text>
+                    <Text style={styles.statLabel}>Всего тренировок</Text>
                 </View>
                 <View style={[styles.statCard, { flex: 1 }]}>
                     <Text style={styles.statValue}>{totalReps}</Text>
-                    <Text style={styles.statLabel}>Повторений</Text>
+                    <Text style={styles.statLabel}>Всего повторений</Text>
                 </View>
             </View>
 
             <View style={styles.statsRow}>
                 <View style={[styles.statCard, { flex: 1 }]}>
                     <Text style={styles.statValue}>{totalMinutes}</Text>
-                    <Text style={styles.statLabel}>Минут</Text>
+                    <Text style={styles.statLabel}>Всего минут</Text>
+                </View>
+                <View style={[styles.statCard, { flex: 1 }]}>
+                    <Text style={styles.statValue}>👟 {selectedDateSteps}</Text>
+                    <Text style={styles.statLabel}>Шагов ({selectedDate.toLocaleDateString('ru', { day: 'numeric', month: 'short' })})</Text>
                 </View>
             </View>
 
+            {/* Weekly Streak Calendar */}
+            <WeeklyStreakCalendar
+                sessions={allSessions}
+                selectedDate={selectedDate}
+                onDateSelect={handleDateSelect}
+            />
 
+            {/* Selected Date Stats */}
+            <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                    📅 {selectedDate.toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </Text>
+                <View style={styles.statsRow}>
+                    <View style={[styles.statCard, { flex: 1, marginRight: 5 }]}>
+                        <Text style={styles.statValue}>👟 {selectedDateSteps}</Text>
+                        <Text style={styles.statLabel}>Шагов</Text>
+                    </View>
+                    <View style={[styles.statCard, { flex: 1, marginLeft: 5 }]}>
+                        <Text style={styles.statValue}>🏃 {selectedDateKm} км</Text>
+                        <Text style={styles.statLabel}>Пробежка</Text>
+                    </View>
+                </View>
+                {filterSessionsByDate(allSessions, selectedDate).length === 0 ? (
+                    <Text style={styles.emptyText}>Нет тренировок в этот день</Text>
+                ) : (
+                    filterSessionsByDate(allSessions, selectedDate).map((session, index) => (
+                        <View key={session.sessionId} style={styles.sessionItem}>
+                            <Text style={styles.sessionDate}>
+                                Тренировка {index + 1}
+                            </Text>
+                            {Object.entries(session.exercises).map(([exerciseName, record]) => {
+                                if (!record.duration && !record.reps) return null;
+                                const displayName = messagesExercises.en[exerciseName as EXERCISES] || exerciseName;
+                                const details = [];
+                                if (record.reps) details.push(`${record.reps} повт.`);
+                                if (record.duration) details.push(`${Math.round(record.duration)} сек.`);
+                                return (
+                                    <Text key={exerciseName} style={styles.sessionExercises}>
+                                        • {displayName}: {details.join(' + ')}
+                                    </Text>
+                                );
+                            })}
+                        </View>
+                    ))
+                )}
+            </View>
 
             {/* Recent Sessions */}
             <View style={styles.card}>
@@ -231,14 +381,26 @@ function ProfileScreen({ onNavigateToLeaderboard, onNavigateToWorkout }: Profile
             <View style={styles.navigationButtons}>
                 <TouchableOpacity
                     style={[styles.navButton, styles.navButtonPrimary]}
-                    onPress={onNavigateToWorkout}
+                    onPress={() => {
+                        if (onNavigateToHome) {
+                            onNavigateToHome();
+                        } else if (navigation?.navigate) {
+                            navigation.navigate('Home' as never);
+                        }
+                    }}
                 >
                     <Text style={styles.navButtonText}>🏋️ Начать тренировку</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     style={[styles.navButton, styles.navButtonSecondary]}
-                    onPress={onNavigateToLeaderboard}
+                    onPress={() => {
+                        if (onNavigateToLeaderboard) {
+                            onNavigateToLeaderboard();
+                        } else if (navigation?.navigate) {
+                            navigation.navigate('Leaderboard' as never);
+                        }
+                    }}
                 >
                     <Text style={styles.navButtonText}>🏆 Таблица лидеров</Text>
                 </TouchableOpacity>

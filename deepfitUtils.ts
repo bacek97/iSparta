@@ -728,14 +728,16 @@ export class SquatsCounter extends ExerciseCounter {
                 kneeLeft: 160,
                 kneeRight: 160,
             },
-            feedback: ["Bad Form. Stand up fully.", "Get into starting position"]
+            feedback: ["Bad Form. Stand up fully.", "Get into starting position"],
+            average_speed: [5000, 7000, 9000]
         },
         {
             angles: {
                 kneeLeft: -90,
                 kneeRight: -90,
             },
-            feedback: ["Bad Form. Go deeper.", "Go Up"]
+            feedback: ["Bad Form. Go deeper.", "Go Up"],
+            average_speed: [5000, 7000, 9000]
         },
     ];
 

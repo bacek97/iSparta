@@ -1,0 +1,8 @@
+{
+    "functions": {
+        "api/verify-signature.js": {
+            "memory": 128,
+            "maxDuration": 10
+        }
+    }
+}

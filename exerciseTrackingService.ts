@@ -46,7 +46,7 @@ export class WorkoutSession {
         }, {} as Record<EXERCISES, SimpleExerciseRecord>);
 
         this.s = {
-            sessionId: `session_${Date.now()}`,
+            sessionId: `${Date.now()}`,
             startTime: new Date(),
             exercises: initialExercises,
         };

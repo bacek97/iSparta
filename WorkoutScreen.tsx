@@ -31,7 +31,12 @@ const { PoseLandmarks } = NativeModules;
 
 // console.log('[PoseLandmarks] PoseLandmarks module:', PoseLandmarks);
 
-const poseLandmarksEmitter = new NativeEventEmitter(PoseLandmarks);
+// Null check for native module
+if (!PoseLandmarks) {
+    console.warn('[PoseLandmarks] Native module not available. Camera-based workout tracking will be disabled.');
+}
+
+const poseLandmarksEmitter = PoseLandmarks ? new NativeEventEmitter(PoseLandmarks) : null;
 
 // Define pose landmark connections (MediaPipe pose model has 33 landmarks)
 // Based on MediaPipe Pose topology
@@ -63,10 +68,9 @@ const poseLandMarkPlugin = VisionCameraProxy.initFrameProcessorPlugin(
 
 interface PoseCameraDemoProps {
     modelPath?: string;
-    onNavigateToProfile?: () => void;
 }
 
-function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmarker_lite.task', onNavigateToProfile }: PoseCameraDemoProps) {
+function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmarker_lite.task' }: PoseCameraDemoProps) {
     const [landmarks, setLandmarks] = useState<PoseLandmark[][]>([]);
     const [pluginDeepFit, setPluginDeepFit] = useState<{ model: TensorflowModel | null }>({ model: null });
 
@@ -153,7 +157,9 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
             let newY: number = kp.y;
 
             // Apply rotation first
-            switch (rotationAngle) {
+            // switch (rotationAngle) {
+            let fixRotationAngle = 0;
+            switch (fixRotationAngle) {
                 case 90:
                     // Rotate 90° clockwise: (x, y) -> (height - y, x)
                     newX = height - kp.y;
@@ -197,6 +203,11 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
     };
 
     useEffect(() => {
+        if (!poseLandmarksEmitter || !PoseLandmarks) {
+            console.log('[PoseLandmarks] Module not available, skipping initialization');
+            return;
+        }
+
         // console.log('[PoseLandmarks] Setting up event listeners...');
 
         // Set up the event listener to listen for pose landmarks detection results
@@ -267,7 +278,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                         // console.log(`[PoseLandmarks] Raw: ${detectedExercise}, Confidence: ${confidence.toFixed(4)}`);
 
                         // Add to queue for smoothing (always, even for Unknown)
-                        console.log('[DEBUG] Before if - sessionActive:', sessionActive, 'workoutSession:', !!workoutSession);
+                        // console.log('[DEBUG] Before if - sessionActive:', sessionActive, 'workoutSession:', !!workoutSession);
                         if (sessionActive && workoutSession) {
                             console.log('[DEBUG] Inside if - calling calculate');
                             workoutSession.addClassification(detectedResult);
@@ -506,9 +517,9 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
             />
             {landmarks.length > 0 && (
                 <Svg style={StyleSheet.absoluteFill}>
-                    {/* {landmarks.map((pose, poseIndex) => (
+                    {landmarks.map((pose, poseIndex) => (
                         <React.Fragment key={`pose-${poseIndex}`}>
-                            {/* Draw lines connecting landmarks }
+                            {/* Draw lines connecting landmarks */}
                             {lines.map(([from, to], lineIndex) => {
                                 if (pose[from] && pose[to]) {
                                     // Only draw if both landmarks have good visibility
@@ -532,7 +543,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                 return null;
                             })}
 
-                            {/* Draw circles on landmarks }
+                            {/* Draw circles on landmarks */}
                             {pose.map((mark, markIndex) => {
                                 // Only draw landmarks with good visibility
                                 if (mark.visibility > 0.5) {
@@ -552,7 +563,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                 return null;
                             })}
                         </React.Fragment>
-                    ))} */}
+                    ))}
 
                     {/* Display exercise info */}
                     {exerciseName && (() => {
@@ -858,6 +869,23 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                                 // Save to AsyncStorage
                                 await AsyncStorage.setItem(`session_${sessionData.sessionId}`, sessionJson);
 
+                                // Auto-sync to server if enabled
+                                try {
+                                    const { autoSyncWorkout } = await import('./autoSyncService');
+                                    const { getCurrentUser } = await import('./authService');
+
+                                    const userData = await getCurrentUser();
+                                    if (userData) {
+                                        await autoSyncWorkout(sessionData, {
+                                            publicKey: userData.publicKey,
+                                            fmsCategory: 'JUNIOR', // TODO: Get from user profile
+                                        });
+                                    }
+                                } catch (syncError) {
+                                    console.log('Auto-sync skipped or failed:', syncError);
+                                    // Don't block workout save if sync fails
+                                }
+
                                 // Count exercises with data
                                 const exerciseCount = Object.values(sessionData.exercises).filter(
                                     (ex: any) => ex.duration > 0 || (ex.reps && ex.reps > 0)
@@ -891,43 +919,6 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                         {sessionActive ? 'End Session' : 'Start Session'}
                     </Text>
                 </TouchableOpacity>
-
-                {/* Profile button */}
-                {onNavigateToProfile && (
-                    <TouchableOpacity
-                        style={[styles.button, styles.buttonProfile]}
-                        onPress={onNavigateToProfile}
-                    >
-                        <Text style={styles.buttonText}>👤 Профиль</Text>
-                    </TouchableOpacity>
-                )}
-
-                {/* Testing buttons */}
-                <View style={styles.testingButtons}>
-                    <TouchableOpacity
-                        style={[styles.button, styles.buttonInfo]}
-                        onPress={async () => {
-                            const newDate = await moveToNextDay();
-                            const info = await getDateInfo();
-                            setDateInfo(info);
-                            Alert.alert('Next Day', `Moved to: ${newDate.toLocaleDateString()}`);
-                        }}
-                    >
-                        <Text style={styles.buttonText}>NextDay</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.button, styles.buttonWarning]}
-                        onPress={async () => {
-                            const newDate = await moveToPreviousDay();
-                            const info = await getDateInfo();
-                            setDateInfo(info);
-                            Alert.alert('Previous Day', `Moved to: ${newDate.toLocaleDateString()}`);
-                        }}
-                    >
-                        <Text style={styles.buttonText}>Ctrl+Z</Text>
-                    </TouchableOpacity>
-                </View>
 
                 {/* Rotation angle selector */}
                 <TouchableOpacity

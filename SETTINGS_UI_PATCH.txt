@@ -1,0 +1,119 @@
+// ADD THIS SECTION TO SettingsScreen.tsx AFTER LINE 158 (after Public Key section, before Mnemonic section)
+
+            {/* Auto-Sync Settings */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Синхронизация</Text>
+                
+                <View style={styles.settingCard}>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingInfo}>
+                            <Text style={styles.settingLabel}>Автоматическая синхронизация</Text>
+                            <Text style={styles.settingDescription}>
+                                Автоматически отправлять результаты тренировок на сервер
+                            </Text>
+                        </View>
+                        <Switch
+                            value={autoSyncEnabled}
+                            onValueChange={handleToggleAutoSync}
+                            trackColor={{ false: '#3A3A3C', true: '#34C759' }}
+                            thumbColor="#fff"
+                        />
+                    </View>
+                </View>
+
+                <View style={styles.syncStatusCard}>
+                    <View style={styles.syncStatusRow}>
+                        <Text style={styles.syncStatusLabel}>Ожидают синхронизации:</Text>
+                        <Text style={styles.syncStatusValue}>{pendingCount}</Text>
+                    </View>
+                    <View style={styles.syncStatusRow}>
+                        <Text style={styles.syncStatusLabel}>Ошибки синхронизации:</Text>
+                        <Text style={[styles.syncStatusValue, failedCount > 0 && styles.syncStatusError]}>
+                            {failedCount}
+                        </Text>
+                    </View>
+                </View>
+
+                {(pendingCount > 0 || failedCount > 0) && (
+                    <TouchableOpacity
+                        style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
+                        onPress={handleSyncAll}
+                        disabled={syncing}
+                    >
+                        {syncing ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.syncButtonText}>
+                                🔄 Синхронизировать все ({pendingCount + failedCount})
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+                )}
+            </View>
+
+// ADD THESE STYLES TO StyleSheet.create() AFTER logoutButtonText style (around line 330)
+
+    settingCard: {
+        backgroundColor: '#1C1C1E',
+        padding: 15,
+        borderRadius: 10,
+        marginBottom: 15,
+    },
+    settingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    settingInfo: {
+        flex: 1,
+        marginRight: 15,
+    },
+    settingLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#fff',
+        marginBottom: 4,
+    },
+    settingDescription: {
+        fontSize: 13,
+        color: '#8E8E93',
+        lineHeight: 18,
+    },
+    syncStatusCard: {
+        backgroundColor: '#1C1C1E',
+        padding: 15,
+        borderRadius: 10,
+        marginBottom: 15,
+    },
+    syncStatusRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginVertical: 4,
+    },
+    syncStatusLabel: {
+        fontSize: 14,
+        color: '#8E8E93',
+    },
+    syncStatusValue: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#34C759',
+    },
+    syncStatusError: {
+        color: '#FF453A',
+    },
+    syncButton: {
+        backgroundColor: '#007AFF',
+        padding: 14,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    syncButtonDisabled: {
+        opacity: 0.5,
+    },
+    syncButtonText: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '600',
+    },

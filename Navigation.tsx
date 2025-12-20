@@ -1,44 +1,15 @@
 /**
- * Simple navigation without React Navigation
- * Using state-based screen switching for simplicity
+ * Navigation using React Navigation Bottom Tabs
+ * Replaced simple state-based navigation with tab navigator
  */
 
-import React, { useState } from 'react';
-import WorkoutScreen from './WorkoutScreen';
-import ProfileScreen from './ProfileScreen';
-import LeaderboardScreen from './LeaderboardScreen';
+import React from 'react';
+import TabNavigator from './TabNavigator';
 
-export type Screen = 'workout' | 'profile' | 'leaderboard';
+export type Screen = 'workout' | 'profile' | 'leaderboard' | 'running' | 'map';
 
 function Navigation() {
-    const [currentScreen, setCurrentScreen] = useState<Screen>('workout');
-
-    const navigateToWorkout = () => setCurrentScreen('workout');
-    const navigateToProfile = () => setCurrentScreen('profile');
-    const navigateToLeaderboard = () => setCurrentScreen('leaderboard');
-
-    switch (currentScreen) {
-        case 'workout':
-            return <WorkoutScreen onNavigateToProfile={navigateToProfile} />;
-
-        case 'profile':
-            return (
-                <ProfileScreen
-                    onNavigateToWorkout={navigateToWorkout}
-                    onNavigateToLeaderboard={navigateToLeaderboard}
-                />
-            );
-
-        case 'leaderboard':
-            return (
-                <LeaderboardScreen
-                    onNavigateToProfile={navigateToProfile}
-                />
-            );
-
-        default:
-            return <WorkoutScreen onNavigateToProfile={navigateToProfile} />;
-    }
+    return <TabNavigator />;
 }
 
 export default Navigation;

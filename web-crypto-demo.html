@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Crypto API Demo - БЕЗ БИБЛИОТЕК</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .output {
+            background: #2d3748;
+            color: #48bb78;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-top: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .success {
+            color: #48bb78;
+        }
+
+        .error {
+            color: #f56565;
+        }
+
+        .info {
+            color: #4299e1;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #48bb78;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔐 Web Crypto API Demo</h1>
+        <p class="subtitle">Криптографическая авторизация БЕЗ библиотек <span class="badge">0 KB</span></p>
+
+        <div class="section">
+            <h2>1️⃣ Генерация ключей</h2>
+            <button onclick="generateKeys()">Сгенерировать ключи</button>
+            <div id="keys-output" class="output" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>2️⃣ Подписание данных</h2>
+            <input type="text" id="exercise-name" placeholder="Название упражнения (например: Push-ups)"
+                value="Push-ups">
+            <input type="number" id="reps" placeholder="Количество повторений" value="20">
+            <button onclick="signWorkout()">Подписать данные</button>
+            <div id="sign-output" class="output" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>3️⃣ Проверка подписи</h2>
+            <button onclick="verifyWorkout()">Проверить подпись</button>
+            <button onclick="verifyFakeWorkout()">Попытка подделки</button>
+            <div id="verify-output" class="output" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>4️⃣ Отправка в Hasura</h2>
+            <input type="text" id="hasura-url" placeholder="URL Hasura GraphQL API"
+                value="https://your-hasura.app/v1/graphql">
+            <button onclick="sendToHasura()">Отправить в Hasura</button>
+            <div id="hasura-output" class="output" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentSignature = null;
+        let currentData = null;
+
+        async function generateKeys() {
+            const output = document.getElementById('keys-output');
+            output.style.display = 'block';
+            output.innerHTML = '<span class="info">⏳ Генерация ключей...</span>';
+
+            try {
+                // Генерация ключевой пары
+                const keyPair = await crypto.subtle.generateKey(
+                    {
+                        name: "ECDSA",
+                        namedCurve: "P-256",
+                    },
+                    true,
+                    ["sign", "verify"]
+                );
+
+                // Экспорт для сохранения
+                const publicKeyExported = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+                const privateKeyExported = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+
+                const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyExported)));
+                const privateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(privateKeyExported)));
+
+                // Сохранение в localStorage
+                localStorage.setItem('publicKey', publicKeyBase64);
+                localStorage.setItem('privateKey', privateKeyBase64);
+
+                output.innerHTML = `<span class="success">✅ Ключи сгенерированы и сохранены!</span>\n\n` +
+                    `<span class="info">Публичный ключ (первые 100 символов):</span>\n${publicKeyBase64.substring(0, 100)}...\n\n` +
+                    `<span class="info">Размер:</span> ${publicKeyBase64.length} символов\n` +
+                    `<span class="info">Алгоритм:</span> ECDSA P-256 (встроен в браузер)\n` +
+                    `<span class="info">Библиотеки:</span> 0 KB`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Ошибка: ${error.message}</span>`;
+            }
+        }
+
+        async function signWorkout() {
+            const output = document.getElementById('sign-output');
+            output.style.display = 'block';
+
+            try {
+                // Проверка наличия ключей
+                const privateKeyBase64 = localStorage.getItem('privateKey');
+                if (!privateKeyBase64) {
+                    output.innerHTML = '<span class="error">❌ Сначала сгенерируйте ключи!</span>';
+                    return;
+                }
+
+                output.innerHTML = '<span class="info">⏳ Подписание данных...</span>';
+
+                // Загрузка приватного ключа
+                const binaryString = atob(privateKeyBase64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                const privateKey = await crypto.subtle.importKey(
+                    "pkcs8",
+                    bytes,
+                    { name: "ECDSA", namedCurve: "P-256" },
+                    true,
+                    ["sign"]
+                );
+
+                // Подготовка данных
+                const exerciseName = document.getElementById('exercise-name').value;
+                const reps = parseInt(document.getElementById('reps').value);
+                currentData = { exerciseName, reps };
+
+                const message = JSON.stringify(currentData);
+                const encoder = new TextEncoder();
+                const messageBytes = encoder.encode(message);
+
+                // Подпись
+                const signatureBytes = await crypto.subtle.sign(
+                    { name: "ECDSA", hash: { name: "SHA-256" } },
+                    privateKey,
+                    messageBytes
+                );
+
+                currentSignature = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
+
+                output.innerHTML = `<span class="success">✅ Данные подписаны!</span>\n\n` +
+                    `<span class="info">Данные:</span>\n${JSON.stringify(currentData, null, 2)}\n\n` +
+                    `<span class="info">Подпись (первые 100 символов):</span>\n${currentSignature.substring(0, 100)}...\n\n` +
+                    `<span class="info">Размер подписи:</span> ${currentSignature.length} символов`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Ошибка: ${error.message}</span>`;
+            }
+        }
+
+        async function verifyWorkout() {
+            const output = document.getElementById('verify-output');
+            output.style.display = 'block';
+
+            try {
+                if (!currentSignature || !currentData) {
+                    output.innerHTML = '<span class="error">❌ Сначала подпишите данные!</span>';
+                    return;
+                }
+
+                output.innerHTML = '<span class="info">⏳ Проверка подписи...</span>';
+
+                // Загрузка публичного ключа
+                const publicKeyBase64 = localStorage.getItem('publicKey');
+                const binaryString = atob(publicKeyBase64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                const publicKey = await crypto.subtle.importKey(
+                    "spki",
+                    bytes,
+                    { name: "ECDSA", namedCurve: "P-256" },
+                    true,
+                    ["verify"]
+                );
+
+                // Декодирование подписи
+                const signatureBinaryString = atob(currentSignature);
+                const signatureBytes = new Uint8Array(signatureBinaryString.length);
+                for (let i = 0; i < signatureBinaryString.length; i++) {
+                    signatureBytes[i] = signatureBinaryString.charCodeAt(i);
+                }
+
+                // Подготовка сообщения
+                const message = JSON.stringify(currentData);
+                const encoder = new TextEncoder();
+                const messageBytes = encoder.encode(message);
+
+                // Проверка
+                const isValid = await crypto.subtle.verify(
+                    { name: "ECDSA", hash: { name: "SHA-256" } },
+                    publicKey,
+                    signatureBytes,
+                    messageBytes
+                );
+
+                output.innerHTML = `<span class="success">✅ Подпись проверена!</span>\n\n` +
+                    `<span class="info">Результат:</span> ${isValid ? '✅ ВАЛИДНА' : '❌ НЕВАЛИДНА'}\n` +
+                    `<span class="info">Данные:</span> ${JSON.stringify(currentData)}`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Ошибка: ${error.message}</span>`;
+            }
+        }
+
+        async function verifyFakeWorkout() {
+            const output = document.getElementById('verify-output');
+            output.style.display = 'block';
+
+            try {
+                if (!currentSignature || !currentData) {
+                    output.innerHTML = '<span class="error">❌ Сначала подпишите данные!</span>';
+                    return;
+                }
+
+                output.innerHTML = '<span class="info">⏳ Попытка подделки данных...</span>';
+
+                // Поддельные данные
+                const fakeData = { ...currentData, reps: 999999 };
+
+                // Загрузка публичного ключа
+                const publicKeyBase64 = localStorage.getItem('publicKey');
+                const binaryString = atob(publicKeyBase64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                const publicKey = await crypto.subtle.importKey(
+                    "spki",
+                    bytes,
+                    { name: "ECDSA", namedCurve: "P-256" },
+                    true,
+                    ["verify"]
+                );
+
+                // Декодирование подписи
+                const signatureBinaryString = atob(currentSignature);
+                const signatureBytes = new Uint8Array(signatureBinaryString.length);
+                for (let i = 0; i < signatureBinaryString.length; i++) {
+                    signatureBytes[i] = signatureBinaryString.charCodeAt(i);
+                }
+
+                // Подготовка поддельного сообщения
+                const message = JSON.stringify(fakeData);
+                const encoder = new TextEncoder();
+                const messageBytes = encoder.encode(message);
+
+                // Проверка
+                const isValid = await crypto.subtle.verify(
+                    { name: "ECDSA", hash: { name: "SHA-256" } },
+                    publicKey,
+                    signatureBytes,
+                    messageBytes
+                );
+
+                output.innerHTML = `<span class="error">🔴 ПОПЫТКА ПОДДЕЛКИ</span>\n\n` +
+                    `<span class="info">Оригинальные данные:</span> ${JSON.stringify(currentData)}\n` +
+                    `<span class="error">Поддельные данные:</span> ${JSON.stringify(fakeData)}\n\n` +
+                    `<span class="info">Результат проверки:</span> ${isValid ? '⚠️ ПРОШЛА (!)' : '✅ ПРОВАЛИЛАСЬ'}\n\n` +
+                    `${!isValid ? '<span class="success">✅ Система защищена! Подделка невозможна без приватного ключа.</span>' : ''}`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Ошибка: ${error.message}</span>`;
+            }
+        }
+
+        async function sendToHasura() {
+            const output = document.getElementById('hasura-output');
+            output.style.display = 'block';
+
+            try {
+                if (!currentSignature || !currentData) {
+                    output.innerHTML = '<span class="error">❌ Сначала подпишите данные!</span>';
+                    return;
+                }
+
+                const hasuraUrl = document.getElementById('hasura-url').value;
+                const publicKey = localStorage.getItem('publicKey');
+
+                output.innerHTML = '<span class="info">⏳ Отправка в Hasura...</span>';
+
+                const response = await fetch(hasuraUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: `
+                            mutation AddWorkout(
+                                $publicKey: String!
+                                $signature: String!
+                                $data: WorkoutInput!
+                            ) {
+                                addWorkout(
+                                    publicKey: $publicKey
+                                    signature: $signature
+                                    data: $data
+                                ) {
+                                    publicKey
+                                    exerciseName
+                                    reps
+                                    verifiedAt
+                                }
+                            }
+                        `,
+                        variables: {
+                            publicKey,
+                            signature: currentSignature,
+                            data: currentData
+                        }
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.errors) {
+                    output.innerHTML = `<span class="error">❌ Ошибка Hasura:</span>\n${JSON.stringify(result.errors, null, 2)}`;
+                } else {
+                    output.innerHTML = `<span class="success">✅ Успешно отправлено в Hasura!</span>\n\n` +
+                        `<span class="info">Ответ:</span>\n${JSON.stringify(result.data, null, 2)}`;
+                }
+            } catch (error) {
+                output.innerHTML = `<span class="error">❌ Ошибка: ${error.message}</span>\n\n` +
+                    `<span class="info">Подсказка:</span> Убедитесь, что Hasura Action настроен и доступен`;
+            }
+        }
+
+        // Проверка наличия ключей при загрузке
+        window.addEventListener('load', () => {
+            if (localStorage.getItem('publicKey')) {
+                console.log('✅ Ключи найдены в localStorage');
+            } else {
+                console.log('ℹ️ Ключи не найдены. Нажмите "Сгенерировать ключи"');
+            }
+        });
+    </script>
+</body>
+
+</html>

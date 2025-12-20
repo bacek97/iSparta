@@ -64,15 +64,17 @@ export enum EXERCISES {
     RUNNING = 'RUNNING',
     CYCLING = 'CYCLING',
     SWIMMING = 'SWIMMING',
+    STEPS = 'STEPS',
     UNKNOWN = 'UNKNOWN'
 }
 
 export enum MuscleGroup {
     ARMS = 'ARMS', // Руки
     LEGS = 'LEGS', // Ноги
-    CHEST = 'CHEST', // Грудь
+    TORSO = 'TORSO', // Грудь
     BACK = 'BACK', // Спина
     RUNNING = 'RUNNING', // Бег
+    STEPS = 'STEPS', // Шаги
 }
 
 type ExerciseNumbers = {
@@ -130,17 +132,49 @@ type ProfileBonus = {
             averagedByWeeks: number;
             counterType: ExerciseType;
         }
-        countOfUnlockedExercises: number;
+        // countOfUnlockedExercises: number;
     }
 }
+
+let crypto = {
+    publicKey: 'ed25519:bs58',
+    signature: 'ed25519:bs58',
+    data: {},
+}
+
+let resultsOfSet = {
+    [EXERCISES.SQUATS]: {
+        hash: 'base64',
+        reps: 10,
+        seconds: 30,
+    },
+    [EXERCISES.RUNNING]: {
+        'svg:path[d]': 'M10 10 L100 100',
+        hash: 'base64',
+        km: 10,
+        seconds: 30,
+    }
+}
+
+let publication = {
+    publicKey: 'ed25519:bs58',
+    signature: 'ed25519:bs58',
+    date: new Date(),
+    exercises: resultsOfSet,
+    text: 'text',
+    image: 'base64/png'
+}
+
+
+
 
 
 // export const EXERCISE_MUSCLE_GROUP_POINTS: ExerciseUnlockBonus = {
 //     [EXERCISES.SQUATS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.LEGS]: 1, [MuscleGroup.ARMS]: 2 } },
 //     [EXERCISES.LUNGES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
 //     [EXERCISES.BICEP_CURLS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
-//     [EXERCISES.SITUPS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.CHEST]: 1 } },
-//     [EXERCISES.PUSHUPS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.CHEST]: 1 } },
+//     [EXERCISES.SITUPS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.TORSO]: 1 } },
+//     [EXERCISES.PUSHUPS]: { conditionToUnlock: { type: 'reps', value: 5 }, amount: { [MuscleGroup.TORSO]: 1 } },
 //     [EXERCISES.TRICEP_EXTENSIONS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
 //     [EXERCISES.DUMBBELL_ROWS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.BACK]: 1 } },
 //     [EXERCISES.JUMPING_JACKS]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.LEGS]: 1 } },
@@ -163,6 +197,7 @@ export const ExerciseType: Record<EXERCISES, ExerciseType> = {
     [EXERCISES.RUNNING]: 'seconds',
     [EXERCISES.CYCLING]: 'seconds',
     [EXERCISES.SWIMMING]: 'seconds',
+    [EXERCISES.STEPS]: 'reps',
     [EXERCISES.UNKNOWN]: 'seconds',
 };
 
@@ -193,4 +228,15 @@ export interface DateOffset {
 export interface QueueItem {
     name: EXERCISES;
     confidence: number;
+}
+
+/**
+ * Workout location data for map visualization
+ */
+export interface WorkoutLocation {
+    latitude: number;
+    longitude: number;
+    timestamp: number;
+    exercise?: EXERCISES;
+    muscleGroup?: MuscleGroup;
 }

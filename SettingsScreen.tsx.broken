@@ -1,0 +1,329 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Clipboard, Switch, ActivityIndicator } from 'react-native';
+import { getCurrentUser, getMnemonic, logout } from './authService';
+import type { UserData } from './authService';
+import * as AutoSync from './autoSyncService';
+import { getPendingSessions, getFailedSessions, syncAllPending } from './autoSyncService';
+
+export const SettingsScreen: React.FC<{ onLogout?: () => void }> = ({ onLogout }) => {
+    const [userData, setUserData] = useState<UserData | null>(null);
+    const [mnemonic, setMnemonic] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [failedCount, setFailedCount] = useState(0);
+    const [syncing, setSyncing] = useState(false);
+
+    useEffect(() => {
+        loadUserData();
+    }, []);
+
+    const loadUserData = async () => {
+        try {
+            const user = await getCurrentUser();
+            const mnemonicPhrase = await getMnemonic();
+            const autoSync = await AutoSync.getAutoSyncEnabled();
+            const pending = await getPendingSessions();
+            const failed = await getFailedSessions();
+
+            setUserData(user);
+            setMnemonic(mnemonicPhrase);
+            setAutoSyncEnabled(autoSync);
+            setPendingCount(pending.length);
+            setFailedCount(failed.length);
+        } catch (error) {
+            console.error('Error loading user data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const copyToClipboard = (text: string, label: string) => {
+        Clipboard.setString(text);
+        Alert.alert('Скопировано', `${label} скопирован в буфер обмена`);
+    };
+
+    const handleLogout = () => {
+        Alert.alert(
+            'Выход',
+            'Вы уверены, что хотите выйти?',
+            [
+                { text: 'Отмена', style: 'cancel' },
+                {
+                    text: 'Выйти',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await logout();
+                        if (onLogout) {
+                            onLogout();
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleToggleAutoSync = async (value: boolean) => {
+        try {
+            await AutoSync.setAutoSyncEnabled(value);
+            setAutoSyncEnabled(value);
+            Alert.alert(
+                'Автосинхронизация',
+                value
+                    ? 'Автосинхронизация включена. Результаты тренировок будут автоматически отправляться на сервер.'
+                    : 'Автосинхронизация выключена. Результаты будут сохраняться только локально.'
+            );
+        } catch (error) {
+            Alert.alert('Ошибка', 'Не удалось изменить настройку автосинхронизации');
+        }
+    };
+
+    const handleSyncAll = async () => {
+        if (!userData) return;
+
+        setSyncing(true);
+        try {
+            const result = await syncAllPending({
+                publicKey: userData.publicKey,
+                fmsCategory: 'JUNIOR',
+            });
+
+            Alert.alert(
+                'Синхронизация завершена',
+                `Успешно: ${result.synced}\nОшибок: ${result.failed}\nВсего: ${result.total}`
+            );
+
+            const pending = await getPendingSessions();
+            const failed = await getFailedSessions();
+            setPendingCount(pending.length);
+            setFailedCount(failed.length);
+        } catch (error) {
+            Alert.alert('Ошибка', 'Не удалось синхронизировать данные');
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <View style={styles.container}>
+                <Text style={styles.loadingText}>Загрузка...</Text>
+            </View>
+        );
+    }
+
+    if (!userData) {
+        return (
+            <View style={styles.container}>
+                <Text style={styles.errorText}>Не удалось загрузить данные пользователя</Text>
+            </View>
+        );
+    }
+
+    return (
+        <ScrollView style={styles.container}>
+            <View style={styles.header}>
+                <Text style={styles.title}>⚙️ Настройки</Text>
+            </View>
+
+            {/* User Info */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Информация о пользователе</Text>
+
+                {userData.nickname && (
+                    <View style={styles.infoCard}>
+                        <Text style={styles.infoLabel}>Никнейм</Text>
+                        <Text style={styles.infoValue}>{userData.nickname}</Text>
+                    </View>
+                )}
+
+                <View style={styles.infoCard}>
+                    <Text style={styles.infoLabel}>Сеть</Text>
+                    <Text style={styles.infoValue}>{userData.network}</Text>
+                </View>
+            </View>
+
+            {/* Public Key */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Публичный ключ (ed25519)</Text>
+                <View style={styles.credentialCard}>
+                    <Text style={styles.credentialText}>{userData.publicKey}</Text>
+                    <TouchableOpacity
+                        style={styles.copyButton}
+                        onPress={() => copyToClipboard(userData.publicKey, 'Публичный ключ')}
+                    <View style={styles.warningCard}>
+                        <Text style={styles.warningIcon}>⚠️</Text>
+                        <View style={styles.warningTextContainer}>
+                            <Text style={styles.warningTitle}>Важно!</Text>
+                            <Text style={styles.warningText}>
+                                Никогда не делитесь этой фразой с другими. Любой, у кого есть доступ к ней, может получить полный контроль над вашим аккаунтом.
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.credentialCard}>
+                        <Text style={styles.mnemonicText}>{mnemonic}</Text>
+                        <TouchableOpacity
+                            style={styles.copyButton}
+                            onPress={() => copyToClipboard(mnemonic, 'Мнемоническая фраза')}
+                        >
+                            <Text style={styles.copyButtonText}>📋 Копировать</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+
+                {/* Logout Button */}
+                <View style={styles.section}>
+                    <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                        <Text style={styles.logoutButtonText}>🚪 Выйти из аккаунта</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>iSparta v1.0</Text>
+                </View>
+        </ScrollView>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#000',
+    },
+    header: {
+        padding: 20,
+        backgroundColor: '#1C1C1E',
+        borderBottomWidth: 1,
+        borderBottomColor: '#38383A',
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#fff',
+        textAlign: 'center',
+    },
+    loadingText: {
+        fontSize: 16,
+        color: '#8E8E93',
+        textAlign: 'center',
+        marginTop: 40,
+    },
+    errorText: {
+        fontSize: 16,
+        color: '#FF453A',
+        textAlign: 'center',
+        marginTop: 40,
+    },
+    section: {
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#38383A',
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#fff',
+        marginBottom: 15,
+    },
+    infoCard: {
+        backgroundColor: '#1C1C1E',
+        padding: 15,
+        borderRadius: 10,
+        marginBottom: 10,
+    },
+    infoLabel: {
+        fontSize: 12,
+        color: '#8E8E93',
+        marginBottom: 5,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    infoValue: {
+        fontSize: 16,
+        color: '#fff',
+        fontWeight: '500',
+    },
+    credentialCard: {
+        backgroundColor: '#1C1C1E',
+        padding: 15,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#38383A',
+    },
+    credentialText: {
+        fontSize: 14,
+        color: '#fff',
+        fontFamily: 'monospace',
+        marginBottom: 15,
+        lineHeight: 20,
+    },
+    mnemonicText: {
+        fontSize: 16,
+        color: '#fff',
+        fontWeight: '600',
+        marginBottom: 15,
+        lineHeight: 24,
+        textAlign: 'center',
+    },
+    copyButton: {
+        backgroundColor: '#007AFF',
+        padding: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    copyButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    warningCard: {
+        backgroundColor: '#2C1810',
+        padding: 15,
+        borderRadius: 10,
+        marginBottom: 15,
+        flexDirection: 'row',
+        borderWidth: 1,
+        borderColor: '#FF9500',
+    },
+    warningIcon: {
+        fontSize: 24,
+        marginRight: 10,
+    },
+    warningTextContainer: {
+        flex: 1,
+    },
+    warningTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#FF9500',
+        marginBottom: 5,
+    },
+    warningText: {
+        fontSize: 13,
+        color: '#FFB84D',
+        lineHeight: 18,
+    },
+    logoutButton: {
+        backgroundColor: '#FF453A',
+        padding: 16,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    logoutButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    footer: {
+        padding: 20,
+        alignItems: 'center',
+    },
+    footerText: {
+        fontSize: 12,
+        color: '#8E8E93',
+    },
+});
+
+export default SettingsScreen;

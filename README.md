@@ -1,97 +1,180 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# BIP39 Авторизация для Hasura
 
-# Getting Started
+Безопасная авторизация без паролей, используя BIP39 мнемонические фразы и криптографические подписи.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## 🎯 Что это?
 
-## Step 1: Start Metro
+- ✅ **Без паролей** - пользователь запоминает 3 слова
+- ✅ **Без регистрации** - пользователь = его публичный ключ
+- ✅ **Без JWT** - подпись проверяется при каждой операции
+- ✅ **Без своего сервера** - используем Vercel Functions (бесплатно)
+- ✅ **Безопасно** - невозможно подделать данные без приватного ключа
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## 📦 Структура проекта
 
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+```
+├── api/
+│   └── verify-signature.js    # Vercel serverless функция
+├── secure-auth.ts             # Генерация ключей и подписей
+├── hasura-client.ts           # Клиент для работы с Hasura
+├── DEPLOY_VERCEL.md           # Инструкция по деплою
+├── SERVERLESS_OPTIONS.md      # Альтернативные платформы
+└── HASURA_SIMPLE.md           # Настройка Hasura
 ```
 
-## Step 2: Build and run your app
+## 🚀 Быстрый старт
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### 1. Выбрать платформу
 
-### Android
+**Рекомендуется: Deno Deploy** (1M запросов/месяц бесплатно)
 
-```sh
-# Using npm
-npm run android
+Альтернативы:
+- Cloudflare Workers (100k запросов/день)
+- Vercel Functions (100k запросов/месяц)
 
-# OR using Yarn
-yarn android
+### 2. Деплой на Deno Deploy (Рекомендуется)
+
+```bash
+# Через GitHub (автоматический деплой)
+# 1. Загрузите код на GitHub
+# 2. Зайдите на https://dash.deno.com
+# 3. Import from GitHub
+# 4. Entry point: deno-deploy/main.ts
+
+# Или через CLI
+deno install -Arf jsr:@deno/deployctl
+deployctl deploy --project=hasura-verify deno-deploy/main.ts
 ```
 
-### iOS
+Получите URL: `https://your-project.deno.dev`
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+**Подробная инструкция**: [DENO_DEPLOY.md](./DENO_DEPLOY.md)
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### 3. Настроить Hasura Action
 
-```sh
-bundle install
+В Hasura Console создайте Action:
+
+```graphql
+type Mutation {
+  addWorkout(
+    publicKey: String!
+    signature: String!
+    data: WorkoutInput!
+  ): Workout
+}
 ```
 
-Then, and every time you update your native dependencies, run:
+Handler: `https://your-project.vercel.app/api/verify-signature`
 
-```sh
-bundle exec pod install
+### 4. Использовать в клиенте
+
+```typescript
+import { signData } from './hasura-client';
+
+const mnemonic = 'mountain pilot push';
+const data = { exerciseName: 'Push-ups', reps: 20 };
+
+const { publicKey, signature } = await signData(mnemonic, data);
+
+// Отправить в Hasura через GraphQL mutation
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## 🔐 Как это работает
 
-```sh
-# Using npm
-npm run ios
+```
+1. Клиент подписывает данные приватным ключом
+   signature = sign(data, privateKey)
 
-# OR using Yarn
-yarn ios
+2. Отправляет: { publicKey, signature, data }
+
+3. Hasura → Vercel Function
+
+4. Vercel проверяет подпись:
+   verify(signature, data, publicKey) === true?
+
+5. Если ОК → данные вставляются в БД
+   Если НЕТ → ошибка 400
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## 📚 Документация
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+- **[DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md)** - Деплой на Vercel
+- **[SERVERLESS_OPTIONS.md](./SERVERLESS_OPTIONS.md)** - Альтернативы (Cloudflare, Netlify, Supabase)
+- **[HASURA_SIMPLE.md](./HASURA_SIMPLE.md)** - Настройка Hasura
+- **[SECURE_AUTH.md](./SECURE_AUTH.md)** - Как работает криптография
 
-## Step 3: Modify your app
+## 🎓 Примеры
 
-Now that you have successfully run the app, let's make changes!
+### Генерация мнемоники
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+```typescript
+import { generateMnemonic } from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+const mnemonic = generateMnemonic(wordlist, 128); // 12 слов
+console.log(mnemonic);
+```
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+### Подпись данных
 
-## Congratulations! :tada:
+```typescript
+import { signData } from './hasura-client';
 
-You've successfully run and modified your React Native App. :partying_face:
+const { publicKey, signature } = await signData(mnemonic, {
+    exerciseName: 'Push-ups',
+    reps: 20
+});
+```
 
-### Now what?
+### Отправка в Hasura
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+```typescript
+const response = await fetch('https://your-hasura.app/v1/graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        query: `mutation AddWorkout($publicKey: String!, $signature: String!, $data: WorkoutInput!) {
+            addWorkout(publicKey: $publicKey, signature: $signature, data: $data) {
+                id
+                publicKey
+                exerciseName
+                reps
+            }
+        }`,
+        variables: { publicKey, signature, data }
+    })
+});
+```
 
-# Troubleshooting
+## 🔒 Безопасность
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+### Что защищено
 
-# Learn More
+- ✅ Невозможно создать запись от имени другого пользователя
+- ✅ Невозможно подделать данные (подпись не совпадёт)
+- ✅ Приватный ключ никогда не покидает устройство пользователя
 
-To learn more about React Native, take a look at the following resources:
+### Что НЕ защищено (опционально)
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- ⚠️ Replay атаки (можно добавить timestamp)
+- ⚠️ Rate limiting (можно добавить в Vercel Function)
+
+## 💰 Стоимость
+
+**Бесплатно!**
+
+- Vercel: 100,000 запросов/месяц
+- Hasura Cloud: бесплатный tier
+- PostgreSQL: Supabase/Neon бесплатный tier
+
+## 🤝 Альтернативы Vercel
+
+- **Cloudflare Workers** - 100k запросов/день
+- **Netlify Functions** - 125k запросов/месяц
+- **Supabase Edge Functions** - безлимит
+
+Все бесплатные!
+
+## 📝 Лицензия
+
+MIT
