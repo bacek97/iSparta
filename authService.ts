@@ -300,3 +300,45 @@ export async function getCurrentUser(): Promise<UserData | null> {
 export async function getMnemonic(): Promise<string | null> {
     return await AsyncStorage.getItem(STORAGE_KEYS.MNEMONIC);
 }
+
+/**
+ * Check if user exists on server and return their data
+ * @param publicKey - User's ed25519 public key
+ * @returns User data if exists, null otherwise
+ */
+export async function checkUserExistsOnServer(publicKey: string): Promise<HasuraUser | null> {
+    try {
+        const query = `
+            query GetUser($publicKey: String!) {
+                users_by_pk(ed25519_public_key: $publicKey) {
+                    ed25519_public_key
+                    fms_category
+                }
+            }
+        `;
+
+        const response = await fetch(HASURA_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+            },
+            body: JSON.stringify({
+                query,
+                variables: { publicKey }
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.errors) {
+            console.error('[authService] checkUserExistsOnServer error:', result.errors);
+            return null;
+        }
+
+        return result.data.users_by_pk || null;
+    } catch (error) {
+        console.error('[authService] checkUserExistsOnServer network error:', error);
+        return null;
+    }
+}

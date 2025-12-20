@@ -10,8 +10,7 @@ import {
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
-import { validateMnemonic, deriveNearKeys, getUserData } from './authService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { validateMnemonic, deriveNearKeys, checkUserExistsOnServer, login } from './authService';
 
 interface LoginScreenProps {
     onLoginSuccess: () => void;
@@ -45,13 +44,13 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }: Lo
             // Derive keys from mnemonic
             const { publicKey } = deriveNearKeys(mnemonic);
 
-            // Check if user exists in storage
-            const storedMnemonic = await AsyncStorage.getItem('auth_mnemonic');
+            // Check if user exists on server
+            const serverUser = await checkUserExistsOnServer(publicKey);
 
-            if (!storedMnemonic) {
+            if (!serverUser) {
                 Alert.alert(
                     'Account Not Found',
-                    'No account found with this mnemonic. Would you like to register?',
+                    'No account found with this mnemonic on the server. Would you like to register?',
                     [
                         { text: 'Cancel', style: 'cancel' },
                         { text: 'Register', onPress: onNavigateToRegister },
@@ -61,18 +60,15 @@ export default function LoginScreen({ onLoginSuccess, onNavigateToRegister }: Lo
                 return;
             }
 
-            // Verify mnemonic matches
-            if (storedMnemonic !== mnemonic) {
-                Alert.alert('Error', 'Incorrect mnemonic phrase');
-                setIsLoading(false);
-                return;
-            }
+            // User exists on server - save credentials locally and login
+            await login(mnemonic);
 
             // Login successful
+            console.log('[LoginScreen] Login successful for user:', publicKey);
             onLoginSuccess();
         } catch (error) {
             console.error('Login error:', error);
-            Alert.alert('Error', 'Failed to login. Please try again.');
+            Alert.alert('Error', 'Failed to login. Please check your network connection and try again.');
         } finally {
             setIsLoading(false);
         }
