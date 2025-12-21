@@ -238,6 +238,7 @@ export async function manualSyncSession(
             bonusData,
         };
     } catch (error) {
+        console.error('[AutoSync] manualSyncSession error:', error);
         await setSyncStatus(session.sessionId, 'failed');
 
         return {

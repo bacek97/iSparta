@@ -24,6 +24,7 @@ class MainApplication : Application(), ReactApplication {
           add(HandLandmarksPackage())
           add(PoseLandmarksFrameProcessorPluginPackage())
           add(PoseLandmarksPackage())
+          add(StepCounterPackage())
         },
     )
   }

@@ -9,12 +9,15 @@ import {
     Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { messagesExercises, EXERCISES } from './types';
-import { SimpleWorkoutSession } from './exerciseTrackingService';
+import { EXERCISE_NAMES, EXERCISES } from './common_types';
+import { SimpleWorkoutSession, SimpleExerciseRecord } from './exerciseTrackingService';
 import WeeklyStreakCalendar from './WeeklyStreakCalendar';
 import { getTodaySteps, subscribeToSteps, startStepCounter, getStepsForDate } from './stepCounterService';
 import { getVirtualDate } from './testingUtils';
 import { filterSessionsByDate, getRunningKilometersForDate } from './profileHelpers';
+import { getAutoSyncEnabled } from './autoSyncService';
+import { getUserAllSessions, ServerWorkoutSession } from './statsService';
+import { getCurrentUser } from './authService';
 
 // Optional navigation import - don't crash if not available
 let useNavigation: (() => any) | null = null;
@@ -70,11 +73,100 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
             const keys = await AsyncStorage.getAllKeys();
             const sessionKeys = keys.filter(key => key.startsWith('session_'));
 
-            const sessions: SimpleWorkoutSession[] = [];
+            const localSessions: SimpleWorkoutSession[] = [];
             for (const key of sessionKeys) {
                 const sessionData = await AsyncStorage.getItem(key);
                 if (sessionData) {
-                    sessions.push(JSON.parse(sessionData));
+                    localSessions.push(JSON.parse(sessionData));
+                }
+            }
+
+            let sessions: SimpleWorkoutSession[] = [...localSessions];
+
+            // Check if auto-sync is enabled - if so, fetch from server
+            const autoSyncEnabled = await getAutoSyncEnabled();
+            if (autoSyncEnabled) {
+                try {
+                    const user = await getCurrentUser();
+                    if (user?.publicKey) {
+                        console.log('[ProfileScreen] Auto-sync enabled, fetching from server...');
+                        const serverSessions = await getUserAllSessions(user.publicKey);
+                        console.log('[ProfileScreen] Got', serverSessions.length, 'sessions from server');
+
+                        // Process server sessions - extract steps and save separately
+                        for (const serverSession of serverSessions) {
+                            for (const set of serverSession.exercise_sets) {
+                                // If this is a STEPS exercise, save to steps storage
+                                if (set.exercise_type === 'STEPS' && set.reps) {
+                                    const sessionDate = new Date(serverSession.session_date);
+                                    const dateStr = `${sessionDate.getFullYear()}-${String(sessionDate.getMonth() + 1).padStart(2, '0')}-${String(sessionDate.getDate()).padStart(2, '0')}`;
+                                    const stepsKey = `@iSparta:steps_${dateStr}`;
+
+                                    // Check if we already have steps for this date
+                                    const existingSteps = await AsyncStorage.getItem(stepsKey);
+                                    const existingValue = existingSteps ? parseInt(existingSteps, 10) : 0;
+
+                                    // Only update if server has more steps
+                                    if (set.reps > existingValue) {
+                                        await AsyncStorage.setItem(stepsKey, set.reps.toString());
+                                        console.log('[ProfileScreen] Saved steps from server:', set.reps, 'for date:', dateStr);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Convert server sessions to local format (excluding pure STEPS sessions)
+                        const convertedServerSessions: SimpleWorkoutSession[] = serverSessions
+                            .filter(serverSession => {
+                                // Filter out sessions that ONLY contain STEPS exercises
+                                const nonStepsExercises = serverSession.exercise_sets.filter(
+                                    set => set.exercise_type !== 'STEPS'
+                                );
+                                return nonStepsExercises.length > 0;
+                            })
+                            .map((serverSession: ServerWorkoutSession) => {
+                                // Create exercises record from server exercise sets
+                                const exercises: Record<EXERCISES, SimpleExerciseRecord> =
+                                    Object.values(EXERCISES).reduce((acc, ex) => {
+                                        acc[ex] = { duration: 0, reps: undefined };
+                                        return acc;
+                                    }, {} as Record<EXERCISES, SimpleExerciseRecord>);
+
+                                // Populate from server data (skip STEPS - handled separately)
+                                serverSession.exercise_sets.forEach(set => {
+                                    if (set.exercise_type === 'STEPS') return; // Skip STEPS
+
+                                    const exerciseType = set.exercise_type as EXERCISES;
+                                    if (exercises[exerciseType]) {
+                                        exercises[exerciseType] = {
+                                            duration: set.seconds || 0,
+                                            reps: set.reps || undefined,
+                                        };
+                                    }
+                                });
+
+                                return {
+                                    sessionId: serverSession.signature,
+                                    startTime: new Date(serverSession.session_date),
+                                    exercises,
+                                };
+                            });
+
+                        // Merge: use Map to avoid duplicates (server data takes priority)
+                        const sessionMap = new Map<string, SimpleWorkoutSession>();
+
+                        // Add local sessions first
+                        localSessions.forEach(s => sessionMap.set(s.sessionId, s));
+
+                        // Server sessions override local (they have confirmed data)
+                        convertedServerSessions.forEach(s => sessionMap.set(s.sessionId, s));
+
+                        sessions = Array.from(sessionMap.values());
+                        console.log('[ProfileScreen] Merged to', sessions.length, 'unique sessions');
+                    }
+                } catch (serverError) {
+                    console.warn('[ProfileScreen] Failed to fetch from server, using local only:', serverError);
+                    // Continue with local sessions only
                 }
             }
 
@@ -130,7 +222,7 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
             const steps = await getTodaySteps();
             setTodaySteps(steps);
 
-            console.log('[ProfileScreen] Loaded', sessions.length, 'sessions');
+            console.log('[ProfileScreen] Loaded', sessions.length, 'sessions (local + server)');
         } catch (error) {
             console.error('[ProfileScreen] Error loading data:', error);
             Alert.alert('Error', 'Failed to load profile data');
@@ -317,23 +409,50 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
                     <Text style={styles.emptyText}>Нет тренировок в этот день</Text>
                 ) : (
                     filterSessionsByDate(allSessions, selectedDate).map((session, index) => (
-                        <View key={session.sessionId} style={styles.sessionItem}>
+                        <TouchableOpacity
+                            key={session.sessionId}
+                            style={styles.sessionItem}
+                            onPress={() => {
+                                // Check if session has running data
+                                const runningExercise = session.exercises['RUNNING'];
+                                if (runningExercise && runningExercise['svg:path[d]']) {
+                                    if (navigation?.navigate) {
+                                        navigation.navigate('Running', {
+                                            screen: 'RunningMap', // Assuming RunningMapScreen is the component for 'Running' tab or nested
+                                            params: {
+                                                mode: 'VIEWING',
+                                                routePoints: runningExercise.route_points,
+                                                routeBounds: runningExercise.route_bounds
+                                            }
+                                        });
+                                        // Or if 'Running' tab IS the RunningMapScreen, we might need to pass params differently
+                                        // Since TabNavigator maps 'Running' to RunningMapScreen directly:
+                                        navigation.navigate('Running', {
+                                            mode: 'VIEWING',
+                                            routePoints: runningExercise.route_points,
+                                            routeBounds: runningExercise.route_bounds
+                                        });
+                                    }
+                                }
+                            }}
+                        >
                             <Text style={styles.sessionDate}>
                                 Тренировка {index + 1}
                             </Text>
                             {Object.entries(session.exercises).map(([exerciseName, record]) => {
-                                if (!record.duration && !record.reps) return null;
-                                const displayName = messagesExercises.en[exerciseName as EXERCISES] || exerciseName;
+                                if (!record.duration && !record.reps && !record.kilometers) return null;
+                                const displayName = EXERCISE_NAMES[exerciseName as EXERCISES] || exerciseName;
                                 const details = [];
                                 if (record.reps) details.push(`${record.reps} повт.`);
                                 if (record.duration) details.push(`${Math.round(record.duration)} сек.`);
+                                if (record.kilometers) details.push(`${record.kilometers.toFixed(2)} км`);
                                 return (
                                     <Text key={exerciseName} style={styles.sessionExercises}>
                                         • {displayName}: {details.join(' + ')}
                                     </Text>
                                 );
                             })}
-                        </View>
+                        </TouchableOpacity>
                     ))
                 )}
             </View>
@@ -360,7 +479,7 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
                             </View>
                             <View style={{ marginTop: 4 }}>
                                 {session.exercises.map((exercise, idx) => {
-                                    const displayName = messagesExercises.en[exercise.exerciseName] || exercise.exerciseName;
+                                    const displayName = EXERCISE_NAMES[exercise.exerciseName] || exercise.exerciseName;
                                     const details = [];
                                     if (exercise.reps) details.push(`${exercise.reps} повт.`);
                                     if (exercise.durationSeconds) details.push(`${Math.round(exercise.durationSeconds)} сек.`);

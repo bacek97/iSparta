@@ -6,7 +6,7 @@ import Svg, { Path, G, Defs, Circle, Ellipse, Text as SvgText, TSpan, Use } from
 import WorkoutScreen from './WorkoutScreen';
 import ProfileScreen from './ProfileScreen';
 import LeaderboardScreen from './LeaderboardScreen';
-import RunningScreen from './RunningScreen';
+import RunningMapScreen from './RunningMapScreen';
 import MapScreen from './MapScreen';
 import SettingsScreen from './SettingsScreen';
 
@@ -115,7 +115,7 @@ function TabNavigator() {
                 component={WorkoutScreen}
                 initialParams={{ onNavigateToProfile: undefined }}
             />
-            <Tab.Screen name="Running" component={RunningScreen} />
+            <Tab.Screen name="Running" component={RunningMapScreen} />
             <Tab.Screen name="Map" component={MapScreen} />
             <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Tab.Screen name="Profile" component={ProfileScreen} />

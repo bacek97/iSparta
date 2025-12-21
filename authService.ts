@@ -111,7 +111,7 @@ export async function registerUserInHasura(
                     }
                     on_conflict: {
                         constraint: users_pkey
-                        update_columns: []
+                        update_columns: [fms_category]
                     }
                 ) {
                     ed25519_public_key
@@ -141,6 +141,8 @@ export async function registerUserInHasura(
             console.error('[authService] Hasura error:', result.errors);
             throw new Error(`Failed to register user: ${result.errors[0].message}`);
         }
+
+        console.log('[authService] registerUserInHasura result:', JSON.stringify(result));
 
         return result.data.insert_users_one;
     } catch (error) {

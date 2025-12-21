@@ -3,8 +3,9 @@
  * Handles GPS location tracking, distance calculation, and pace monitoring
  */
 
-import Geolocation from 'react-native-geolocation-service';
+import BackgroundGeolocation from '@aakashsajjad/react-native-background-geolocation';
 import { PermissionsAndroid, Platform } from 'react-native';
+import * as SvgUtils from './svgPathUtils';
 
 export interface GPSPoint {
     latitude: number;
@@ -43,29 +44,30 @@ export class RunningTrackingService {
     private onMetricsUpdate: ((metrics: RunningMetrics) => void) | null = null;
 
     /**
-     * Request location permissions
+     * Request location permissions (Android only, BackgroundGeolocation handles iOS)
      */
     async requestLocationPermission(): Promise<boolean> {
-        if (Platform.OS === 'ios') {
-            const auth = await Geolocation.requestAuthorization('whenInUse');
-            return auth === 'granted';
-        }
-
         if (Platform.OS === 'android') {
-            const granted = await PermissionsAndroid.request(
-                PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-                {
-                    title: 'Location Permission',
-                    message: 'iSparta needs access to your location for running tracking',
-                    buttonNeutral: 'Ask Me Later',
-                    buttonNegative: 'Cancel',
-                    buttonPositive: 'OK',
-                }
-            );
-            return granted === PermissionsAndroid.RESULTS.GRANTED;
+            try {
+                const granted = await PermissionsAndroid.request(
+                    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+                    {
+                        title: 'Location Permission',
+                        message: 'iSparta needs access to your location for running tracking',
+                        buttonNeutral: 'Ask Me Later',
+                        buttonNegative: 'Cancel',
+                        buttonPositive: 'OK',
+                    }
+                );
+                return granted === PermissionsAndroid.RESULTS.GRANTED;
+            } catch (err) {
+                console.error('Permission request error:', err);
+                return false;
+            }
         }
 
-        return false;
+        // iOS - BackgroundGeolocation handles it automatically
+        return true;
     }
 
     /**
@@ -211,35 +213,48 @@ export class RunningTrackingService {
             pausedDuration: 0,
         };
 
-        this.watchId = Geolocation.watchPosition(
-            (position) => {
-                if (!this.session || this.session.isPaused) return;
+        // Configure BackgroundGeolocation
+        BackgroundGeolocation.configure({
+            desiredAccuracy: 0, // HIGH_ACCURACY
+            stationaryRadius: 5,
+            distanceFilter: 5,
+            notificationTitle: 'iSparta Running',
+            notificationText: 'Tracking your run',
+            debug: false,
+            startOnBoot: false,
+            stopOnTerminate: true,
+            locationProvider: 1, // ACTIVITY_PROVIDER (doesn't need Google Play Services)
+            interval: 3000,
+            fastestInterval: 2000,
+            activitiesInterval: 10000,
+        });
 
-                const point: GPSPoint = {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    altitude: position.coords.altitude,
-                    timestamp: position.timestamp,
-                    accuracy: position.coords.accuracy,
-                };
+        // Listen for location updates
+        BackgroundGeolocation.on('location', (location) => {
+            if (!this.session || this.session.isPaused) return;
 
-                // Only add point if accuracy is good enough (< 50m)
-                if (point.accuracy < 50) {
-                    this.session.route.push(point);
-                    this.lastPoint = point;
-                    this.updateMetrics();
-                }
-            },
-            (error) => {
-                console.error('[RunningTracking] Location error:', error);
-            },
-            {
-                enableHighAccuracy: true,
-                distanceFilter: 5, // Update every 5 meters
-                interval: 3000,    // Update every 3 seconds
-                fastestInterval: 2000,
+            const point: GPSPoint = {
+                latitude: location.latitude,
+                longitude: location.longitude,
+                altitude: location.altitude,
+                timestamp: location.time,
+                accuracy: location.accuracy,
+            };
+
+            // Only add point if accuracy is good enough (<50m)
+            if (point.accuracy < 50) {
+                this.session.route.push(point);
+                this.lastPoint = point;
+                this.updateMetrics();
             }
-        );
+        });
+
+        BackgroundGeolocation.on('error', (error) => {
+            console.error('[RunningTracking] Location error:', error);
+        });
+
+        // Start tracking
+        BackgroundGeolocation.start();
 
         return true;
     }
@@ -269,10 +284,9 @@ export class RunningTrackingService {
      * Stop tracking and return final session
      */
     stopTracking(): RunningSession | null {
-        if (this.watchId !== null) {
-            Geolocation.clearWatch(this.watchId);
-            this.watchId = null;
-        }
+        // Stop BackgroundGeolocation
+        BackgroundGeolocation.stop();
+        BackgroundGeolocation.removeAllListeners();
 
         if (this.session) {
             this.session.endTime = Date.now();
@@ -304,8 +318,34 @@ export class RunningTrackingService {
     /**
      * Check if session is paused
      */
+    /**
+     * Check if session is paused
+     */
     isPaused(): boolean {
         return this.session !== null && this.session.isPaused;
+    }
+
+    /**
+     * Get SVG path for current route
+     */
+    getSvgPath(): string {
+        if (!this.session || this.session.route.length < 2) return '';
+        return SvgUtils.coordinatesToSvgPath(this.session.route);
+    }
+
+    /**
+     * Get raw route points
+     */
+    getRoutePoints(): GPSPoint[] {
+        return this.session ? this.session.route : [];
+    }
+
+    /**
+     * Get route bounds
+     */
+    getBounds(): SvgUtils.RouteBounds | null {
+        if (!this.session || this.session.route.length === 0) return null;
+        return SvgUtils.getRouteBounds(this.session.route);
     }
 }
 

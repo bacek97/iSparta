@@ -182,25 +182,6 @@ let publication = {
 //     [EXERCISES.LATERAL_SHOULDER_RAISES]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: { [MuscleGroup.ARMS]: 1 } },
 //     [EXERCISES.UNKNOWN]: { conditionToUnlock: { type: 'seconds', value: 30 }, amount: {} }
 // };
-
-export const ExerciseType: Record<EXERCISES, ExerciseType> = {
-    [EXERCISES.SQUATS]: 'reps',
-    [EXERCISES.PUSHUPS]: 'reps',
-    [EXERCISES.LUNGES]: 'seconds',
-    [EXERCISES.BICEP_CURLS]: 'seconds',
-    [EXERCISES.SITUPS]: 'seconds',
-    [EXERCISES.TRICEP_EXTENSIONS]: 'seconds',
-    [EXERCISES.DUMBBELL_ROWS]: 'seconds',
-    [EXERCISES.DUMBBELL_SHOULDER_PRESS]: 'seconds',
-    [EXERCISES.JUMPING_JACKS]: 'seconds',
-    [EXERCISES.LATERAL_SHOULDER_RAISES]: 'seconds',
-    [EXERCISES.RUNNING]: 'seconds',
-    [EXERCISES.CYCLING]: 'seconds',
-    [EXERCISES.SWIMMING]: 'seconds',
-    [EXERCISES.STEPS]: 'reps',
-    [EXERCISES.UNKNOWN]: 'seconds',
-};
-
 export const messagesExercises = {
     en: {
         [EXERCISES.SQUATS]: 'Squats',
@@ -213,14 +194,14 @@ export const messagesExercises = {
         [EXERCISES.DUMBBELL_SHOULDER_PRESS]: 'Dumbbell shoulder press',
         [EXERCISES.JUMPING_JACKS]: 'Jumping jacks',
         [EXERCISES.LATERAL_SHOULDER_RAISES]: 'Lateral shoulder raises',
+        [EXERCISES.RUNNING]: 'Running',
+        [EXERCISES.CYCLING]: 'Cycling',
+        [EXERCISES.SWIMMING]: 'Swimming',
+        [EXERCISES.STEPS]: 'Steps',
         [EXERCISES.UNKNOWN]: 'Unknown',
     }
 }
 
-/**
- * Virtual date offset for testing (in days)
- * Used to simulate different dates for NRA testing
- */
 export interface DateOffset {
     days: number; // Number of days to offset from current date
 }

@@ -27,6 +27,10 @@ export interface ServerExerciseSet {
     seconds: number;
     reps?: number;
     kilometers?: number;
+    // New fields for running tracking
+    svg_path_d?: string;
+    route_points?: any; // JSONB
+    route_bounds?: any; // JSONB
 }
 
 export interface UserData {
@@ -102,6 +106,23 @@ export function convertToServerFormat(
             reps: record.reps,
         };
 
+        // Handle KILOMETERS category and extra fields
+        if (record.kilometers !== undefined) {
+            exerciseSet.exercise_category = 'KILOMETERS';
+            exerciseSet.kilometers = record.kilometers;
+
+            // Map new running fields
+            if (record['svg:path[d]']) {
+                exerciseSet.svg_path_d = record['svg:path[d]'];
+            }
+            if (record.route_points) {
+                exerciseSet.route_points = record.route_points;
+            }
+            if (record.route_bounds) {
+                exerciseSet.route_bounds = record.route_bounds;
+            }
+        }
+
         exerciseSets.push(exerciseSet);
     });
 
@@ -156,6 +177,9 @@ export async function sendWorkoutToServer(
                 seconds: set.seconds,
                 reps: set.reps || null,
                 kilometers: set.kilometers || null,
+                svg_path_d: set.svg_path_d || null,
+                route_points: set.route_points || null,
+                route_bounds: set.route_bounds || null,
             })),
         },
         user: {

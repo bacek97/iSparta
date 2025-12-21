@@ -6,6 +6,11 @@ export interface SimpleExerciseRecord {
     reps?: number;         // optional, for rep-based exercises
     direction?: number;    // optional, for rep-based exercises
     exerciseCounter?: ExerciseCounter;
+    // New fields for running
+    kilometers?: number;
+    'svg:path[d]'?: string;
+    route_points?: any[];
+    route_bounds?: any;
 }
 
 export interface ExerciseWithReps extends SimpleExerciseRecord {
