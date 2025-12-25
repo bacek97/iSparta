@@ -31,6 +31,38 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    
+    // УСИЛЕННЫЙ КОСТЫЛЬ v2: Напрямую инициализируем logback-android
+    // SLF4J не находит StaticLoggerBinder и использует NOP logger, поэтому делаем это вручную
+    try {
+      val context = org.slf4j.LoggerFactory.getILoggerFactory() as? ch.qos.logback.classic.LoggerContext
+      
+      if (context != null) {
+        context.reset()
+        
+        // Настраиваем LogcatAppender
+        val encoder = ch.qos.logback.classic.encoder.PatternLayoutEncoder()
+        encoder.context = context
+        encoder.pattern = "%msg"
+        encoder.start()
+        
+        val logcatAppender = ch.qos.logback.classic.android.LogcatAppender()
+        logcatAppender.context = context
+        logcatAppender.encoder = encoder  
+        logcatAppender.start()
+        
+        val root = org.slf4j.LoggerFactory.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
+        root.level = ch.qos.logback.classic.Level.TRACE
+        root.addAppender(logcatAppender)
+        
+        android.util.Log.d("MainApplication", "Logback-android configured successfully")
+      } else {
+        android.util.Log.e("MainApplication", "LoggerContext is null or not logback")
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("MainApplication", "Failed to configure logback", e)
+    }
+    
     loadReactNative(this)
   }
 }
