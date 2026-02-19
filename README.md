@@ -1,97 +1,65 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+[jesty]: https://i.ibb.co/0pF27JN3/jesty.jpg
+[rustore1]: https://static.rustore.ru/2025/12/27/3e/apk/2063684073/content/SCREENSHOT/6d888db3-04d9-4be0-b92e-f64a38f3921f.png
+[rustore2]: https://static.rustore.ru/2025/12/27/a4/apk/2063684073/content/SCREENSHOT/b13a77bc-8c58-41ad-bc93-6e2f0c4772d0.png
+[rustore3]: https://static.rustore.ru/2026/2/10/92/apk/2063684073/content/SCREENSHOT/7643a7cb-f04f-4426-9b73-f666263dcfdb.jpg
+[rustore4]: https://static.rustore.ru/2026/2/10/d7/apk/2063684073/content/SCREENSHOT/9487ccb5-d7b5-4020-96eb-684989d84520.jpg
+[rustore5]: https://static.rustore.ru/2025/12/27/21/apk/2063684073/content/SCREENSHOT/938341d7-a0ad-4235-9577-60e8168fede6.jpg 
+[rustore6]: https://static.rustore.ru/2025/12/27/20/apk/2063684073/content/SCREENSHOT/e1f88231-e14c-4efb-a978-5ba561cea777.jpg
+[rustore7]: https://static.rustore.ru/2025/12/27/b9/apk/2063684073/content/SCREENSHOT/55384d27-1e84-4104-909d-81bb4a7381a9.jpg
+[rustore8]: https://static.rustore.ru/2025/12/27/02/apk/2063684073/content/SCREENSHOT/f9222e17-42d9-4367-8660-d520b8e86965.jpg
 
-# Getting Started
+# Прототип приложения с распознаванием жестов
+table 4 cols
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+| | | | |
+| --- | --- | --- | --- |
+| ![rustore1] | ![rustore2] | ![rustore3] | ![rustore4] |
+| ![rustore5] | ![rustore6] | ![rustore7] | ![rustore8] |
 
-## Step 1: Start Metro
+# Описание
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+iSparta — это не просто очередной трекер, а универсальный инструмент, который вы настраиваете под свои задачи.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+Три способа использовать iSparta:
 
-```sh
-# Using npm
-npm start
+1. Глобальное сообщество (Социальная сеть) Для тех, кто ищет мотивацию в общении и конкуренции.
+Битвы и лидерборды: Вступайте в лиги, открытые или закрытые группы. Соревнуйтесь с друзьями в реальном времени.
+Лента активности: Делитесь своими успехами, ставьте реакции на тренировки друзей и вдохновляйтесь общими победами.
 
-# OR using Yarn
-yarn start
+2. Цифровая дисциплина (Контроль экранного времени) Для тех, кто хочет превратить зависимость от гаджетов в спортивные достижения.
+Механика Time Bank: Конвертируйте физическую активность в минуты доступа к развлекательным приложениям.
+Умный блокировщик: Установите правила для «пожирателей времени». Теперь право на отдых нужно заработать честным движением.
+Система доверия: Возьмите «Кредит времени» для срочных задач и «погасите» его на следующей тренировке.
+
+3. Твой личный фитнес-дневник (Приватность и Оффлайн) Для тех, кто тренируется для себя и не хочет публичности.
+Полный оффлайн-режим: Все ваши данные хранятся только на вашем устройстве. Никакой синхронизации, никакой регистрации, если вы этого не хотите.
+Детальный учет: Ведите историю своих подходов, беговых маршрутов и ежедневной активности в удобном цифровом блокноте.
+Чистая статистика: Наблюдайте за своим прогрессом через наглядные отчеты без лишнего шума и рекламы.
+
+Почему выбирают iSparta:
+
+Гибкость: Вы сами решаете, какие функции использовать сегодня.  
+Прозрачность: Вы полностью контролируете свои данные и режим синхронизации.  
+Универсальность: От простого шагомера до продвинутой социальной экосистемы — всё в одном приложении.  
+iSparta. Твой путь. Твоя дисциплина. Твоя свобода. Начни прямо сейчас!
+
+## Запуск
 ```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+cd android; ./gradlew clean; cd ..
 npm run android
-
-# OR using Yarn
-yarn android
+npx react-native start --reset-cache
+```
+```
+npm run android -- --mode="release"
 ```
 
-### iOS
+# Примечания
+https://github.com/margelo/react-native-worklets-core/pull/262 ожидается добавление в релиз
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+https://github.com/mrousavy/react-native-vision-camera/pull/3668 ожидается добавление в релиз
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+https://ai.google.dev/edge/mediapipe/solutions/guide?hl=en
 
-```sh
-bundle install
-```
+Holistic model:
+https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task
 
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
