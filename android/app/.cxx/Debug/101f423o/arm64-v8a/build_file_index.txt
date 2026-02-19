@@ -1,0 +1,8 @@
+C:\tmp\isparta1\iSparta\node_modules\@shopify\react-native-skia\android\build\generated\source\codegen\jni\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\react-native-fast-tflite\android\build\generated\source\codegen\jni\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\react-native-reanimated\android\build\generated\source\codegen\jni\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\react-native-safe-area-context\android\src\main\jni\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\react-native-worklets-core\android\build\generated\source\codegen\jni\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\react-native-worklets\android\build\generated\source\codegen\jni\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\react-native\ReactAndroid\cmake-utils\default-app-setup\CMakeLists.txt
+C:\tmp\isparta1\iSparta\node_modules\vision-camera-resize-plugin\android\build\generated\source\codegen\jni\CMakeLists.txt

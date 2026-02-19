@@ -180,6 +180,9 @@ export const PublicationCreator: React.FC<Props> = ({
                 }
             }
 
+            // Get SVG path from session if available
+            const runningSvg = session.exercises[EXERCISES.RUNNING]?.['svg:path[d]'] || undefined;
+
             await createPublication(
                 {
                     session_signature: session.sessionId,
@@ -187,6 +190,7 @@ export const PublicationCreator: React.FC<Props> = ({
                     text_content: text.trim() || undefined,
                     images: images.length > 0 ? images : undefined,
                     include_map: hasRunning && includeMap,
+                    map_svg_path: runningSvg,
                 },
                 user.publicKey
             );

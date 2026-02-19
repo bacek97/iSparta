@@ -56,6 +56,7 @@ export enum EXERCISES {
     BICEP_CURLS = 'BICEP_CURLS',
     SITUPS = 'SITUPS',
     PUSHUPS = 'PUSHUPS',
+    PULLUPS = 'PULLUPS',
     TRICEP_EXTENSIONS = 'TRICEP_EXTENSIONS',
     DUMBBELL_ROWS = 'DUMBBELL_ROWS',
     JUMPING_JACKS = 'JUMPING_JACKS',
@@ -186,6 +187,7 @@ export const messagesExercises = {
     en: {
         [EXERCISES.SQUATS]: 'Squats',
         [EXERCISES.PUSHUPS]: 'Pushups',
+        [EXERCISES.PULLUPS]: 'Pullups',
         [EXERCISES.LUNGES]: 'Lunges',
         [EXERCISES.BICEP_CURLS]: 'Bicep curls',
         [EXERCISES.SITUPS]: 'Situps',

@@ -34,6 +34,39 @@ export default function RunningMapScreen() {
 
     const mapRef = useRef<any>(null);
     const cameraRef = useRef<any>(null);
+    const lastFetchCenter = useRef<{ lat: number; lon: number } | null>(null);
+    const stepCountingEnabled = useRef<boolean>(false);
+
+    // Handler for map region change - fetch sports grounds for new visible area
+    const handleRegionDidChange = async (feature: any) => {
+        if (mode !== 'TRACKING') return;
+
+        try {
+            const center = feature?.geometry?.coordinates;
+            if (!center || center.length < 2) return;
+
+            const lon = center[0];
+            const lat = center[1];
+
+            // Avoid refetching if moved less than ~500m
+            if (lastFetchCenter.current) {
+                const distLat = Math.abs(lat - lastFetchCenter.current.lat);
+                const distLon = Math.abs(lon - lastFetchCenter.current.lon);
+                // ~0.005 degrees ≈ 500m
+                if (distLat < 0.005 && distLon < 0.005) {
+                    return;
+                }
+            }
+
+            lastFetchCenter.current = { lat, lon };
+            console.log('[DEBUG] Map region changed, fetching sports grounds for:', lat, lon);
+            const grounds = await SportsGrounds.fetchNearbySportsGrounds(lat, lon);
+            console.log('[DEBUG] Fetched', grounds.length, 'sports grounds for new area');
+            setSportsGrounds(grounds);
+        } catch (error) {
+            console.error('[DEBUG] Failed to fetch sports grounds on region change:', error);
+        }
+    };
 
     // Initialize Map
     useEffect(() => {
@@ -106,6 +139,15 @@ export default function RunningMapScreen() {
             if (!hasPermission) {
                 Alert.alert('Permission Denied', 'Location permission is required');
                 return;
+            }
+
+            // Request step counting permission (optional - running works without it)
+            const { requestActivityRecognitionPermission } = await import('./stepCounterService');
+            const hasStepPermission = await requestActivityRecognitionPermission();
+            stepCountingEnabled.current = hasStepPermission;
+
+            if (!hasStepPermission) {
+                console.log('[DEBUG] Step counting permission denied, steps will be saved as 0');
             }
 
             Alert.alert('Permission OK', 'Location permission granted, starting tracker...');
@@ -187,12 +229,44 @@ export default function RunningMapScreen() {
                                 await AsyncStorage.setItem(key, JSON.stringify(workoutSession));
                                 console.log('[DEBUG] Saved to storage:', key);
 
-                                // Update steps - add to today's total
-                                const runningSteps = kilometersToSteps(session.metrics.distance);
-                                const currentSteps = await getTodaySteps();
-                                const newTotalSteps = currentSteps + runningSteps;
-                                await saveSteps(newTotalSteps);
-                                console.log('[DEBUG] Updated step counter:', currentSteps, '+', runningSteps, '=', newTotalSteps);
+                                // Update steps - only if permission was granted
+                                let runningSteps = 0;
+                                if (stepCountingEnabled.current) {
+                                    runningSteps = kilometersToSteps(session.metrics.distance);
+                                    const currentSteps = await getTodaySteps();
+                                    const newTotalSteps = currentSteps + runningSteps;
+                                    await saveSteps(newTotalSteps);
+                                    console.log('[DEBUG] Updated step counter:', currentSteps, '+', runningSteps, '=', newTotalSteps);
+                                } else {
+                                    console.log('[DEBUG] Step counting disabled, saving 0 steps');
+                                }
+
+                                // Earn time for App Lock feature
+                                try {
+                                    const { earnTime } = await import('./timeBankService');
+                                    const { TimeEarningSource } = await import('./appLockTypes');
+
+                                    const distanceKm = session.metrics.distance;
+                                    let totalEarned = 0;
+
+                                    // Earn time from running (1 km = 1 min)
+                                    if (distanceKm > 0) {
+                                        await earnTime(TimeEarningSource.RUNNING, distanceKm);
+                                        totalEarned += Math.floor(distanceKm);
+                                    }
+
+                                    // Earn time from steps (100 steps = 1 min)
+                                    if (runningSteps > 0) {
+                                        await earnTime(TimeEarningSource.STEPS, runningSteps);
+                                        totalEarned += Math.floor(runningSteps / 100);
+                                    }
+
+                                    if (totalEarned > 0) {
+                                        console.log(`[RunningMapScreen] Earned ${totalEarned} minutes for App Lock`);
+                                    }
+                                } catch (earnError) {
+                                    console.log('Time earning skipped:', earnError);
+                                }
 
                                 Alert.alert(
                                     'Run Saved',
@@ -231,6 +305,7 @@ export default function RunningMapScreen() {
                     sources: {},
                     layers: []
                 }}
+                onRegionDidChange={handleRegionDidChange}
             >
                 {/* OSM Tiles */}
                 <RasterSource

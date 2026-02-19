@@ -13,24 +13,27 @@ import {
     StyleSheet,
     Image,
     ActivityIndicator,
+    TouchableOpacity,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { getGroupPublications, subscribeToGroupPublications } from '../publicationsService';
+import { getUserFeedPublications, subscribeToGroupPublications } from '../publicationsService';
 import { getAutoSyncEnabled } from '../autoSyncService';
 import { getCurrentUser } from '../authService';
 import { showNewPublicationNotification } from '../notificationService';
 import type { PublicationWithWorkout } from '../common_types';
 import { EXERCISE_NAMES } from '../common_types';
+import { UserProfileModal } from './UserProfileModal';
 
 interface Props {
-    groupId: string;
+    currentUserKey: string;
 }
 
-export const PublicationsFeed: React.FC<Props> = ({ groupId }) => {
+export const PublicationsFeed: React.FC<Props> = ({ currentUserKey }) => {
     const [publications, setPublications] = useState<PublicationWithWorkout[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [selectedUserKey, setSelectedUserKey] = useState<string | null>(null);
 
     const loadPublications = async (isRefresh = false) => {
         try {
@@ -41,7 +44,8 @@ export const PublicationsFeed: React.FC<Props> = ({ groupId }) => {
             }
             setError(null);
 
-            const data = await getGroupPublications(groupId);
+            // Load publications from all user's groups and followed users
+            const data = await getUserFeedPublications(currentUserKey);
             setPublications(data);
         } catch (err) {
             console.error('[PublicationsFeed] Error:', err);
@@ -53,51 +57,10 @@ export const PublicationsFeed: React.FC<Props> = ({ groupId }) => {
     };
 
     useEffect(() => {
-        let unsubscribe: (() => void) | null = null;
-
-        const setup = async () => {
-            try {
-                const [autoSyncEnabled, user] = await Promise.all([
-                    getAutoSyncEnabled(),
-                    getCurrentUser()
-                ]);
-
-                if (autoSyncEnabled && user?.publicKey) {
-                    // Use real-time subscription
-                    console.log('[PublicationsFeed] Auto-sync enabled, starting subscription...');
-
-                    unsubscribe = subscribeToGroupPublications(
-                        groupId,
-                        user.publicKey,
-                        (pubs) => {
-                            setPublications(pubs);
-                            setLoading(false);
-                        },
-                        (newPub) => {
-                            console.log('[PublicationsFeed] New publication, showing notification');
-                            showNewPublicationNotification(newPub);
-                        }
-                    );
-                } else {
-                    // Fallback to one-time fetch
-                    console.log('[PublicationsFeed] Auto-sync disabled, fetching once');
-                    loadPublications();
-                }
-            } catch (err) {
-                console.error('[PublicationsFeed] Setup error:', err);
-                loadPublications(); // Fallback
-            }
-        };
-
-        setup();
-
-        return () => {
-            if (unsubscribe) {
-                console.log('[PublicationsFeed] Cleaning up subscription');
-                unsubscribe();
-            }
-        };
-    }, [groupId]);
+        if (currentUserKey) {
+            loadPublications();
+        }
+    }, [currentUserKey]);
 
     const renderWorkoutSummary = (workout: PublicationWithWorkout['workout_session']) => {
         if (!workout?.exercise_sets) return null;
@@ -124,10 +87,12 @@ export const PublicationsFeed: React.FC<Props> = ({ groupId }) => {
 
     const renderPublication = ({ item }: { item: PublicationWithWorkout }) => (
         <View style={styles.publicationCard}>
-            {/* User info */}
-            <Text style={styles.userText}>
-                {item.user_public_key.slice(0, 20)}...
-            </Text>
+            {/* User info - clickable */}
+            <TouchableOpacity onPress={() => setSelectedUserKey(item.user_public_key)}>
+                <Text style={styles.userText}>
+                    {item.user_public_key.slice(0, 20)}...
+                </Text>
+            </TouchableOpacity>
 
             {/* Date */}
             <Text style={styles.dateText}>
@@ -201,22 +166,33 @@ export const PublicationsFeed: React.FC<Props> = ({ groupId }) => {
     }
 
     return (
-        <FlatList
-            data={publications}
-            renderItem={renderPublication}
-            keyExtractor={(item) => item.id!.toString()}
-            style={{ flex: 1 }}
-            contentContainerStyle={styles.listContainer}
-            nestedScrollEnabled={true}
-            scrollEnabled={true}
-            refreshControl={
-                <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={() => loadPublications(true)}
-                />
-            }
-            testID="publications-list"
-        />
+        <>
+            <FlatList
+                data={publications}
+                renderItem={renderPublication}
+                keyExtractor={(item) => item.id!.toString()}
+                style={{ flex: 1 }}
+                contentContainerStyle={styles.listContainer}
+                nestedScrollEnabled={true}
+                scrollEnabled={true}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => loadPublications(true)}
+                    />
+                }
+                testID="publications-list"
+            />
+            <UserProfileModal
+                visible={selectedUserKey !== null}
+                onClose={() => setSelectedUserKey(null)}
+                user={selectedUserKey ? {
+                    ed25519_public_key: selectedUserKey,
+                    nickname: null
+                } : null}
+                currentUserKey={currentUserKey}
+            />
+        </>
     );
 };
 

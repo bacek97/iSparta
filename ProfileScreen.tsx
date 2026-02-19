@@ -8,6 +8,7 @@ import {
     Alert,
     Dimensions,
 } from 'react-native';
+import Svg, { Path, Ellipse, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EXERCISE_NAMES, EXERCISES } from './common_types';
 import { SimpleWorkoutSession, SimpleExerciseRecord } from './exerciseTrackingService';
@@ -18,6 +19,7 @@ import { filterSessionsByDate, getRunningKilometersForDate } from './profileHelp
 import { getAutoSyncEnabled } from './autoSyncService';
 import { getUserAllSessions, ServerWorkoutSession } from './statsService';
 import { getCurrentUser } from './authService';
+import { PublicationCreator } from './components/PublicationCreator';
 
 // Optional navigation import - don't crash if not available
 let useNavigation: (() => any) | null = null;
@@ -43,6 +45,86 @@ interface SessionDisplay {
     }>;
 }
 
+const screenWidth = Dimensions.get('window').width;
+
+// Exercise Map SVG Component (moved from MapScreen)
+const ExerciseMapSvg = ({ scale }: { scale: number }) => {
+    const baseWidth = screenWidth - 50;
+    const baseHeight = (baseWidth / 483.563) * 88.246;
+    const svgWidth = baseWidth * scale;
+    const svgHeight = baseHeight * scale;
+
+    return (
+        <Svg width={svgWidth} height={svgHeight} viewBox="0 0 483.563 88.246" preserveAspectRatio="xMidYMid meet">
+            {/* Main pink connection path to advanced exercises */}
+            <Path d="M288.333 18.867c.34-.8 1.124-1.322 1.904-1.646.294-.121.602-.204.902-.306 2.218-.595 4.543-.56 6.81-.306.49.055.978.14 1.467.21 1.48.235 2.94.623 4.3 1.266.264.125 1.03.556.78.405-.766-.456-1.548-.883-2.32-1.325 2.032 1.265 4.084 2.501 6.21 3.61.637.334 2.06.702 2.683.882 3.955.97 7.974 1.648 11.996 2.272 2.833.404 5.661.834 8.505 1.15 1.281.077 2.556.29 3.84.321 1.082.026 2.158-.079 3.228-.212l.784-.122-2.973-2.078-.71.155c-.81.128-1.055.188-1.905.226-1.655.074-3.308-.14-4.952-.291-2.765-.335-5.53-.677-8.296-1.007-4.05-.567-8.113-1.178-12.035-2.364-.547-.19-1.102-.36-1.64-.57-.426-.164-1.606-.84-1.25-.553.632.515 1.405.83 2.106 1.25.264.157-.533-.306-.796-.465-.242-.148-.479-.304-.719-.456l-.738-.466c-.592-.34-3.162-1.949-4.584-2.555-1.319-.562-2.729-.858-4.146-1.037-1.134-.129-1.862-.227-3.016-.287a30 30 0 0 0-3.11.004 15 15 0 0 0-1.389.125c-.348.054-.686.163-1.03.245-.336.099-.68.176-1.009.298-.897.332-1.735.893-2.3 1.67z" fill="#ff14a7" fillOpacity="1" strokeWidth=".264583" />
+
+            {/* Connection lines for arms (orange) */}
+            <Path d="M59.745 42.116c1.78-1.225 4.187-1.542 6.403-1.748 1.888-.138 3.115-.076 4.716.783.353.147.947.423 1.34.47 1.6.19 3.545-.344 5.092-.657 1.64-.376 3.202-.869 4.366-1.944l-3.959-2.037c-1.093 1-2.608 1.435-4.126 1.802-1.595.319-3.352.777-4.997.429-.356-.076-.978-.377-1.306-.526-1.61-.707-3.03-.716-4.82-.537-2.337.273-4.818.648-6.703 1.933z" fill="#ff8a00" fillOpacity="1" strokeWidth=".0574055" />
+            <Path d="M105.427 35.292a7 7 0 0 1 2.515-1.222c1.224-.251 2.48-.249 3.724-.265 1.956-.097 3.897.162 5.832.41 2.026.322 4.042.76 5.952 1.517.455.206 1.116.496 1.558.733.222.12.873.51.652.387-4.635-2.58-2.706-1.616-1.404-.548 1.274 1.15 2.595 2.248 3.823 3.447a106 106 0 0 1 3.263 3.424 81 81 0 0 0 3.32 3.612 22 22 0 0 0 2.976 2.457c1.788 1.242 3.64 2.43 5.62 3.335.47.163.233.093.707.213l-3.125-2.413c-.446-.154-.225-.067-.664-.261-1.21-.633-3.149-1.759 2.321 1.382.13.075-.255-.16-.378-.245-.135-.094-.265-.196-.397-.294l-.435-.295c-1.102-.668-2.083-1.53-3.039-2.39-1.149-1.164-2.272-2.35-3.327-3.6a111 111 0 0 0-3.245-3.439c-1.224-1.214-2.555-2.305-3.82-3.476-2.173-1.92-4.81-3.257-7.45-4.415-1.934-.69-3.94-1.134-5.973-1.42-1.965-.252-3.933-.497-5.92-.405-1.273.019-2.563.018-3.806.333a8.8 8.8 0 0 0-2.635 1.33z" fill="#ff8a00" fillOpacity="1" strokeWidth=".0529167" />
+
+            {/* All exercise ellipses with labels */}
+            <Ellipse cx="32.679" cy="54.725" rx="32.653" ry="27.963" fill="#202020" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="32.679" y="57" fontSize="4" fill="#fff" textAnchor="middle">ОТЖИМАНИЯ</SvgText>
+
+            <Ellipse cx="102.5" cy="64.625" rx="18.063" ry="11.463" fill="#16b139" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="102.5" y="66" fontSize="3.5" fill="#fff" textAnchor="middle">ПРИСЕДАНИЯ</SvgText>
+
+            <Ellipse cx="163.163" cy="75.186" rx="19.232" ry="11.897" fill="#16b139" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="163.163" y="77" fontSize="3.5" fill="#fff" textAnchor="middle">ВЫПАДЫ</SvgText>
+
+            <Ellipse cx="212.963" cy="73.136" rx="15.284" ry="9.553" fill="#16b139" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="212.963" y="74.5" fontSize="3" fill="#fff" textAnchor="middle">JUMPING JACK</SvgText>
+
+            <Ellipse cx="163.463" cy="21.552" rx="19.626" ry="10.768" fill="#ff8a00" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="163.463" y="20" fontSize="3" fill="#fff" textAnchor="middle">СГИБАНИЕ РУК</SvgText>
+            <SvgText x="163.463" y="24" fontSize="3" fill="#fff" textAnchor="middle">НА ТРИЦЕПС</SvgText>
+
+            <Ellipse cx="270.279" cy="15.125" rx="19.8" ry="12.332" fill="#ff8a00" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="270.279" y="14" fontSize="3" fill="#fff" textAnchor="middle">СГИБАНИЕ РУК</SvgText>
+            <SvgText x="270.279" y="18" fontSize="3" fill="#fff" textAnchor="middle">НА БИЦЕПС</SvgText>
+
+            <Ellipse cx="92.947" cy="36.141" rx="15.458" ry="10.768" fill="#ff8a00" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+
+            <Ellipse cx="229.116" cy="43.61" rx="23.1" ry="15.111" fill="#770072" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="229.116" y="42" fontSize="3" fill="#fff" textAnchor="middle">ЖИМ ГАНТЕЛЕЙ</SvgText>
+            <SvgText x="229.116" y="46" fontSize="3" fill="#fff" textAnchor="middle">НА ПЛЕЧИ</SvgText>
+
+            <Ellipse cx="281.742" cy="43.61" rx="21.189" ry="11.637" fill="#770072" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="281.742" y="45" fontSize="3" fill="#fff" textAnchor="middle">ТЯГА ГАНТЕЛЕЙ</SvgText>
+
+            <Ellipse cx="279.831" cy="68.62" rx="21.363" ry="11.289" fill="#770072" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="279.831" y="67" fontSize="2.8" fill="#fff" textAnchor="middle">ПОДЪЁМ ГАНТЕЛЕЙ</SvgText>
+            <SvgText x="279.831" y="71" fontSize="2.8" fill="#fff" textAnchor="middle">В СТОРОНЫ</SvgText>
+
+            <Ellipse cx="154.952" cy="49.341" rx="19.105" ry="9.726" fill="#0026cd" fillOpacity="1" stroke="#000" strokeWidth=".0529167" />
+            <SvgText x="154.952" y="51" fontSize="3" fill="#fff" textAnchor="middle">ПОДЪЁМ КОРПУСА</SvgText>
+
+            <Ellipse cx="360.942" cy="19.641" rx="30.221" ry="15.111" fill="#ff14a7" fillOpacity="1" strokeWidth=".264583" />
+            <SvgText x="360.942" y="21" fontSize="3.5" fill="#fff" textAnchor="middle">ПОДТЯГИВАНИЯ</SvgText>
+
+            <Ellipse cx="355.384" cy="75.741" rx="21.189" ry="12.505" fill="#ff14a7" fillOpacity="1" strokeWidth=".264583" />
+            <SvgText x="355.384" y="74" fontSize="3" fill="#fff" textAnchor="middle">ПОДЪЁМ НА ТУРНИК</SvgText>
+            <SvgText x="355.384" y="78" fontSize="3" fill="#fff" textAnchor="middle">С ПЕРЕВОРОТОМ</SvgText>
+
+            <Ellipse cx="421.384" cy="52.12" rx="30.221" ry="15.979" fill="#ff14a7" fillOpacity="1" strokeWidth=".264583" />
+            <SvgText x="421.384" y="51" fontSize="3.5" fill="#fff" textAnchor="middle">ОТЖИМАНИЯ</SvgText>
+            <SvgText x="421.384" y="55" fontSize="3.5" fill="#fff" textAnchor="middle">НА БРУСЬЯХ</SvgText>
+
+            <Ellipse cx="453.689" cy="14.952" rx="29.874" ry="13.547" fill="#ff14a7" fillOpacity="1" strokeWidth=".264583" />
+            <SvgText x="453.689" y="16" fontSize="3.5" fill="#fff" textAnchor="middle">ВЫХОД АНГЕЛА</SvgText>
+
+            {/* Lock icons for locked exercises */}
+            <Path d="M95.423 24.707v-1.915a4.15 4.15 0 0 1 8.3 0v1.915h.48c.616 0 1.116.5 1.116 1.117v6.066c0 .617-.5 1.117-1.117 1.117h-9.258c-.617 0-1.117-.5-1.117-1.117v-6.066c0-.617.5-1.117 1.117-1.117zm1.915-1.915a2.235 2.235 0 0 1 4.47 0v1.915h-4.47zm2.873 5.865a1.116 1.116 0 0 0-.638-2.035 1.118 1.118 0 0 0-.638 2.035v1.796a.638.638 0 1 0 1.276 0z" fill="#FFD700" stroke="#000" strokeWidth=".161213" transform="translate(12.316 28.51)" />
+            <Path d="M95.423 24.707v-1.915a4.15 4.15 0 0 1 8.3 0v1.915h.48c.616 0 1.116.5 1.116 1.117v6.066c0 .617-.5 1.117-1.117 1.117h-9.258c-.617 0-1.117-.5-1.117-1.117v-6.066c0-.617.5-1.117 1.117-1.117zm1.915-1.915a2.235 2.235 0 0 1 4.47 0v1.915h-4.47zm2.873 5.865a1.116 1.116 0 0 0-.638-2.035 1.118 1.118 0 0 0-.638 2.035v1.796a.638.638 0 1 0 1.276 0z" fill="#FFD700" stroke="#000" strokeWidth=".161213" transform="translate(69.684 13.467)" />
+            <Path d="M95.423 24.707v-1.915a4.15 4.15 0 0 1 8.3 0v1.915h.48c.616 0 1.116.5 1.116 1.117v6.066c0 .617-.5 1.117-1.117 1.117h-9.258c-.617 0-1.117-.5-1.117-1.117v-6.066c0-.617.5-1.117 1.117-1.117zm1.915-1.915a2.235 2.235 0 0 1 4.47 0v1.915h-4.47zm2.873 5.865a1.116 1.116 0 0 0-.638-2.035 1.118 1.118 0 0 0-.638 2.035v1.796a.638.638 0 1 0 1.276 0z" fill="#FFD700" stroke="#000" strokeWidth=".161213" transform="translate(265.688 48.4)" />
+            <Path d="M95.423 24.707v-1.915a4.15 4.15 0 0 1 8.3 0v1.915h.48c.616 0 1.116.5 1.116 1.117v6.066c0 .617-.5 1.117-1.117 1.117h-9.258c-.617 0-1.117-.5-1.117-1.117v-6.066c0-.617.5-1.117 1.117-1.117zm1.915-1.915a2.235 2.235 0 0 1 4.47 0v1.915h-4.47zm2.873 5.865a1.116 1.116 0 0 0-.638-2.035 1.118 1.118 0 0 0-.638 2.035v1.796a.638.638 0 1 0 1.276 0z" fill="#FFD700" stroke="#000" strokeWidth=".161213" transform="translate(277.15 -7.179)" />
+            <Path d="M95.423 24.707v-1.915a4.15 4.15 0 0 1 8.3 0v1.915h.48c.616 0 1.116.5 1.116 1.117v6.066c0 .617-.5 1.117-1.117 1.117h-9.258c-.617 0-1.117-.5-1.117-1.117v-6.066c0-.617.5-1.117 1.117-1.117zm1.915-1.915a2.235 2.235 0 0 1 4.47 0v1.915h-4.47zm2.873 5.865a1.116 1.116 0 0 0-.638-2.035 1.118 1.118 0 0 0-.638 2.035v1.796a.638.638 0 1 0 1.276 0z" fill="#FFD700" stroke="#000" strokeWidth=".161213" transform="translate(337.593 25.821)" />
+            <Path d="M95.423 24.707v-1.915a4.15 4.15 0 0 1 8.3 0v1.915h.48c.616 0 1.116.5 1.116 1.117v6.066c0 .617-.5 1.117-1.117 1.117h-9.258c-.617 0-1.117-.5-1.117-1.117v-6.066c0-.617.5-1.117 1.117-1.117zm1.915-1.915a2.235 2.235 0 0 1 4.47 0v1.915h-4.47zm2.873 5.865a1.116 1.116 0 0 0-.638-2.035 1.118 1.118 0 0 0-.638 2.035v1.796a.638.638 0 1 0 1.276 0z" fill="#FFD700" stroke="#000" strokeWidth=".161213" transform="translate(370.94 -12.042)" />
+        </Svg>
+    );
+};
+
 function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScreenProps = {}) {
     // Try to get navigation from context, but don't crash if not available
     let navigation: any = null;
@@ -64,6 +146,9 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedDateSteps, setSelectedDateSteps] = useState<number>(0);
     const [selectedDateKm, setSelectedDateKm] = useState<number>(0);
+    const [publishingSession, setPublishingSession] = useState<SimpleWorkoutSession | null>(null);
+    const [currentUserKey, setCurrentUserKey] = useState<string>('');
+    const [mapScale, setMapScale] = useState(1.5);
 
     const loadData = async () => {
         try {
@@ -244,6 +329,13 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
         const unsubscribe = subscribeToSteps((steps) => {
             console.log('[ProfileScreen] Steps updated:', steps);
             setTodaySteps(steps);
+        });
+
+        // Load current user for publications
+        getCurrentUser().then(user => {
+            if (user?.publicKey) {
+                setCurrentUserKey(user.publicKey);
+            }
         });
 
         return () => {
@@ -463,37 +555,102 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
                 {recentSessions.length === 0 ? (
                     <Text style={styles.emptyText}>Нет тренировок</Text>
                 ) : (
-                    recentSessions.map((session, index) => (
-                        <View key={session.id} style={styles.sessionItem}>
-                            <View style={styles.sessionHeader}>
-                                <Text style={styles.sessionDate}>
-                                    {new Date(session.date).toLocaleDateString('ru', {
-                                        weekday: 'short',
-                                        month: 'short',
-                                        day: 'numeric',
-                                    })}
-                                </Text>
-                                <Text style={styles.sessionDuration}>
-                                    {Math.floor(session.totalDurationSeconds / 60)} мин
-                                </Text>
-                            </View>
-                            <View style={{ marginTop: 4 }}>
-                                {session.exercises.map((exercise, idx) => {
-                                    const displayName = EXERCISE_NAMES[exercise.exerciseName] || exercise.exerciseName;
-                                    const details = [];
-                                    if (exercise.reps) details.push(`${exercise.reps} повт.`);
-                                    if (exercise.durationSeconds) details.push(`${Math.round(exercise.durationSeconds)} сек.`);
+                    recentSessions.map((session, index) => {
+                        // Find corresponding full session for sharing
+                        const fullSession = allSessions.find(s => s.sessionId === session.id);
 
-                                    return (
-                                        <Text key={idx} style={styles.sessionExercises}>
-                                            • {displayName}: {details.join(' + ')}
+                        return (
+                            <View key={session.id} style={styles.sessionItem}>
+                                <View style={styles.sessionHeader}>
+                                    <Text style={styles.sessionDate}>
+                                        {new Date(session.date).toLocaleDateString('ru', {
+                                            weekday: 'short',
+                                            month: 'short',
+                                            day: 'numeric',
+                                        })}
+                                    </Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                        <Text style={styles.sessionDuration}>
+                                            {Math.floor(session.totalDurationSeconds / 60)} мин
                                         </Text>
-                                    );
-                                })}
+                                        {fullSession && currentUserKey && (
+                                            <TouchableOpacity
+                                                onPress={() => setPublishingSession(fullSession)}
+                                                style={styles.shareButton}
+                                            >
+                                                <Text style={styles.shareButtonText}>📤</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                </View>
+                                <View style={{ marginTop: 4 }}>
+                                    {session.exercises.map((exercise, idx) => {
+                                        const displayName = EXERCISE_NAMES[exercise.exerciseName] || exercise.exerciseName;
+                                        const details = [];
+                                        if (exercise.reps) details.push(`${exercise.reps} повт.`);
+                                        if (exercise.durationSeconds) details.push(`${Math.round(exercise.durationSeconds)} сек.`);
+
+                                        return (
+                                            <Text key={idx} style={styles.sessionExercises}>
+                                                • {displayName}: {details.join(' + ')}
+                                            </Text>
+                                        );
+                                    })}
+                                </View>
                             </View>
-                        </View>
-                    ))
+                        );
+                    })
                 )}
+            </View>
+
+            {/* Exercise Map Section */}
+            <View style={styles.card}>
+                <View style={styles.mapHeader}>
+                    <Text style={styles.cardTitle}>🗺️ Карта упражнений</Text>
+                    <View style={styles.zoomButtons}>
+                        <TouchableOpacity onPress={() => setMapScale(prev => Math.max(prev - 0.5, 1))} style={styles.zoomButton}>
+                            <Text style={styles.zoomButtonText}>➖</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setMapScale(1.5)} style={styles.zoomButton}>
+                            <Text style={styles.zoomButtonText}>⟲</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setMapScale(prev => Math.min(prev + 0.5, 10))} style={styles.zoomButton}>
+                            <Text style={styles.zoomButtonText}>➕</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View style={styles.mapContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                        <ScrollView style={{ height: 270 }} showsVerticalScrollIndicator={true}>
+                            <ExerciseMapSvg scale={mapScale} />
+                        </ScrollView>
+                    </ScrollView>
+                </View>
+
+                <View style={styles.legend}>
+                    <Text style={styles.legendTitle}>Группы мышц</Text>
+                    <View style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: '#FF8A00' }]} />
+                        <Text style={styles.legendText}>Руки (Arms)</Text>
+                    </View>
+                    <View style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: '#16B139' }]} />
+                        <Text style={styles.legendText}>Ноги (Legs)</Text>
+                    </View>
+                    <View style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: '#770072' }]} />
+                        <Text style={styles.legendText}>Грудь/Плечи (Torso)</Text>
+                    </View>
+                    <View style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: '#0026CD' }]} />
+                        <Text style={styles.legendText}>Спина (Back)</Text>
+                    </View>
+                    <View style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: '#FF14A7' }]} />
+                        <Text style={styles.legendText}>Продвинутые (Advanced)</Text>
+                    </View>
+                </View>
             </View>
 
             {/* Navigation Buttons */}
@@ -542,6 +699,19 @@ function ProfileScreen({ onNavigateToHome, onNavigateToLeaderboard }: ProfileScr
             </View>
 
             <View style={{ height: 40 }} />
+
+            {/* Publication Creator Modal */}
+            {publishingSession && (
+                <PublicationCreator
+                    session={publishingSession}
+                    visible={!!publishingSession}
+                    onClose={() => setPublishingSession(null)}
+                    onSuccess={() => {
+                        setPublishingSession(null);
+                        loadData(); // Refresh data
+                    }}
+                />
+            )}
         </ScrollView>
     );
 }
@@ -777,6 +947,69 @@ const styles = StyleSheet.create({
     },
     navButtonDanger: {
         backgroundColor: '#dc3545',
+    },
+    shareButton: {
+        padding: 8,
+        backgroundColor: '#007AFF',
+        borderRadius: 8,
+        minWidth: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    shareButtonText: {
+        fontSize: 18,
+    },
+    mapHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    mapContainer: {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 15,
+        height: 290,
+        overflow: 'hidden',
+    },
+    zoomButtons: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    zoomButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 5,
+        backgroundColor: '#3a3a3a',
+        borderRadius: 8,
+    },
+    zoomButtonText: {
+        fontSize: 18,
+        color: '#FF14A7',
+    },
+    legend: {
+        marginTop: 5,
+    },
+    legendTitle: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: 'white',
+        marginBottom: 8,
+    },
+    legendRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 5,
+    },
+    legendDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    legendText: {
+        fontSize: 12,
+        color: '#ccc',
     },
 });
 

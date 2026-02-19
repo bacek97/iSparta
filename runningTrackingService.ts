@@ -223,7 +223,7 @@ export class RunningTrackingService {
             debug: false,
             startOnBoot: false,
             stopOnTerminate: true,
-            locationProvider: 1, // ACTIVITY_PROVIDER (doesn't need Google Play Services)
+            locationProvider: 0, // DISTANCE_FILTER_PROVIDER (doesn't need ACTIVITY_RECOGNITION)
             interval: 3000,
             fastestInterval: 2000,
             activitiesInterval: 10000,

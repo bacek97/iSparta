@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "prefabPath": "C:\\Users\\Neo\\.gradle\\caches\\modules-2\\files-2.1\\com.google.prefab\\cli\\2.1.0\\aa32fec809c44fa531f01dcfb739b5b3304d3050\\cli-2.1.0-all.jar",
+  "packages": [
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-vision-camera\\android\\build\\intermediates\\prefab_package\\release\\prefab",
+    "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\10d05c481339b14db20662a26b484466\\transformed\\jetified-react-android-0.82.1-release\\prefab",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-reanimated\\android\\build\\intermediates\\prefab_package\\release\\prefab",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-worklets\\android\\build\\intermediates\\prefab_package\\release\\prefab",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-worklets-core\\android\\build\\intermediates\\prefab_package\\release\\prefab",
+    "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\98e02d7a5f1ea7b6211dbe9dd8128749\\transformed\\jetified-hermes-android-0.82.1-release\\prefab",
+    "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\97c16419c1089f82511cc6150d259292\\transformed\\jetified-fbjni-0.7.0\\prefab"
+  ]
+}

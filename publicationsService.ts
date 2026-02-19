@@ -63,6 +63,75 @@ const GET_GROUP_PUBLICATIONS_QUERY = `
     }
 `;
 
+// Query to get publications from multiple groups
+const GET_PUBLICATIONS_FROM_GROUPS_QUERY = `
+    query GetPublicationsFromGroups($groupIds: [String!]!, $limit: Int = 100) {
+        workout_publications(
+            where: { group_id: { _in: $groupIds } }
+            order_by: { created_at: desc }
+            limit: $limit
+        ) {
+            id
+            session_signature
+            user_public_key
+            group_id
+            text_content
+            images
+            map_svg_path
+            created_at
+            updated_at
+            workout_session {
+                signature
+                session_date
+                base_points
+                total_points
+                exercise_sets {
+                    exercise_type
+                    reps
+                    kilometers
+                    seconds
+                    points
+                }
+            }
+        }
+    }
+`;
+
+// Query to get publications from followed users
+const GET_PUBLICATIONS_FROM_USERS_QUERY = `
+    query GetPublicationsFromUsers($userKeys: [String!]!, $limit: Int = 100) {
+        workout_publications(
+            where: { user_public_key: { _in: $userKeys } }
+            order_by: { created_at: desc }
+            limit: $limit
+        ) {
+            id
+            session_signature
+            user_public_key
+            group_id
+            text_content
+            images
+            map_svg_path
+            created_at
+            updated_at
+            workout_session {
+                signature
+                session_date
+                base_points
+                total_points
+                exercise_sets {
+                    exercise_type
+                    reps
+                    kilometers
+                    seconds
+                    points
+                }
+            }
+        }
+    }
+`;
+
+
 const UPDATE_PUBLICATION_MUTATION = `
     mutation UpdatePublication($id: Int!, $updates: workout_publications_set_input!) {
         update_workout_publications_by_pk(
@@ -242,11 +311,8 @@ export async function createPublication(
         throw new Error('Publication already exists for this session');
     }
 
-    // Get SVG path if needed for RUNNING workout
-    let mapSvgPath: string | null = null;
-    if (input.include_map) {
-        mapSvgPath = await getSessionSvgPath(input.session_signature);
-    }
+    // Use map_svg_path from input if include_map is true
+    const mapSvgPath = (input.include_map && input.map_svg_path) ? input.map_svg_path : null;
 
     const publicationData = {
         session_signature: input.session_signature,
@@ -353,6 +419,65 @@ async function getSessionSvgPath(sessionSignature: string): Promise<string | nul
     // SVG path storage not implemented yet - return null
     // TODO: Implement SVG path storage in future
     return null;
+}
+
+/**
+ * Get aggregated feed publications from all user's groups and followed users
+ */
+export async function getUserFeedPublications(
+    userKey: string,
+    limit: number = 100
+): Promise<PublicationWithWorkout[]> {
+    // Import functions dynamically to avoid circular dependency
+    const { getUserGroups } = require('./groupService');
+    const { getFollowing } = require('./userRelationsService');
+
+    try {
+        // Get all user's groups and followed users in parallel
+        const [userGroups, followedUsers] = await Promise.all([
+            getUserGroups(userKey).catch(() => []),
+            getFollowing(userKey).catch(() => [])
+        ]);
+
+        const groupIds = userGroups.map((g: any) => g.group?.group_id || g.group_id).filter(Boolean);
+        const followedUserKeys = followedUsers.map((f: any) => f.to_user_key).filter(Boolean);
+
+        console.log('[PublicationsService] Feed sources - groups:', groupIds.length, 'followed:', followedUserKeys.length);
+
+        // Fetch publications from both sources
+        const results = await Promise.all([
+            groupIds.length > 0
+                ? executeGraphQL(GET_PUBLICATIONS_FROM_GROUPS_QUERY, { groupIds, limit })
+                : Promise.resolve({ workout_publications: [] }),
+            followedUserKeys.length > 0
+                ? executeGraphQL(GET_PUBLICATIONS_FROM_USERS_QUERY, { userKeys: followedUserKeys, limit })
+                : Promise.resolve({ workout_publications: [] })
+        ]);
+
+        // Combine and deduplicate by id
+        const allPublications = [
+            ...(results[0].workout_publications || []),
+            ...(results[1].workout_publications || [])
+        ];
+
+        // Deduplicate by id
+        const seen = new Set<number>();
+        const uniquePublications = allPublications.filter(pub => {
+            if (seen.has(pub.id)) return false;
+            seen.add(pub.id);
+            return true;
+        });
+
+        // Sort by created_at desc
+        uniquePublications.sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        return uniquePublications.slice(0, limit);
+    } catch (error) {
+        console.error('[PublicationsService] getUserFeedPublications error:', error);
+        return [];
+    }
 }
 
 /**

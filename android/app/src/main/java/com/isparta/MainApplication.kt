@@ -25,6 +25,7 @@ class MainApplication : Application(), ReactApplication {
           add(PoseLandmarksFrameProcessorPluginPackage())
           add(PoseLandmarksPackage())
           add(StepCounterPackage())
+          add(AppUsageStatsPackage())
         },
     )
   }

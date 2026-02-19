@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">iSparta</string>
+    <string name="accessibility_service_description">iSparta использует эту службу для блокировки приложений, когда нет доступного времени. Служба обнаруживает запуск отслеживаемых приложений.</string>
 </resources>

@@ -344,3 +344,187 @@ export async function checkUserExistsOnServer(publicKey: string): Promise<Hasura
         return null;
     }
 }
+
+/**
+ * Auto-register a new user with a randomly generated mnemonic
+ * Used for automatic account creation on first app launch
+ */
+export async function autoRegister(): Promise<boolean> {
+    try {
+        const mnemonic = generateMnemonic();
+        const { publicKey } = deriveNearKeys(mnemonic);
+
+        await AsyncStorage.multiSet([
+            [STORAGE_KEYS.MNEMONIC, mnemonic],
+            [STORAGE_KEYS.PUBLIC_KEY, publicKey],
+            [STORAGE_KEYS.NETWORK, 'testnet'],
+        ]);
+
+        console.log('[authService] Auto-registered new user with public key:', publicKey);
+        return true;
+    } catch (error) {
+        console.error('[authService] Auto-register error:', error);
+        return false;
+    }
+}
+
+/**
+ * Update user's nickname
+ */
+export async function updateNickname(nickname: string): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.NICKNAME, nickname);
+}
+
+/**
+ * Check if a nickname is available in Hasura database
+ * @param nickname - Nickname to check
+ * @param excludePublicKey - Optional public key to exclude (for existing user)
+ * @returns true if nickname is available, false if taken
+ */
+export async function isNicknameFreeInHasura(
+    nickname: string,
+    excludePublicKey?: string
+): Promise<boolean> {
+    try {
+        const query = excludePublicKey
+            ? `
+                query CheckNicknameExcludingUser($nickname: String!, $excludeKey: String!) {
+                    users(where: {
+                        nickname: { _eq: $nickname },
+                        ed25519_public_key: { _neq: $excludeKey }
+                    }) {
+                        ed25519_public_key
+                    }
+                }
+            `
+            : `
+                query CheckNicknameExists($nickname: String!) {
+                    users(where: { nickname: { _eq: $nickname } }) {
+                        ed25519_public_key
+                    }
+                }
+            `;
+
+        const variables = excludePublicKey
+            ? { nickname, excludeKey: excludePublicKey }
+            : { nickname };
+
+        const response = await fetch(HASURA_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+            },
+            body: JSON.stringify({ query, variables })
+        });
+
+        const result = await response.json();
+
+        if (result.errors) {
+            console.error('[authService] isNicknameFreeInHasura error:', result.errors);
+            throw new Error(result.errors[0].message);
+        }
+
+        return result.data.users.length === 0;
+    } catch (error) {
+        console.error('[authService] isNicknameFreeInHasura network error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update nickname in Hasura database
+ * @param publicKey - User's public key
+ * @param nickname - New nickname
+ * @returns Updated user data
+ */
+export async function updateNicknameInHasura(
+    publicKey: string,
+    nickname: string
+): Promise<{ ed25519_public_key: string; nickname: string } | null> {
+    try {
+        const mutation = `
+            mutation UpdateNickname($publicKey: String!, $nickname: String!) {
+                update_users_by_pk(
+                    pk_columns: { ed25519_public_key: $publicKey },
+                    _set: { nickname: $nickname }
+                ) {
+                    ed25519_public_key
+                    nickname
+                }
+            }
+        `;
+
+        const response = await fetch(HASURA_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-hasura-admin-secret': HASURA_ADMIN_SECRET
+            },
+            body: JSON.stringify({
+                query: mutation,
+                variables: { publicKey, nickname }
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.errors) {
+            console.error('[authService] updateNicknameInHasura error:', result.errors);
+            throw new Error(result.errors[0].message);
+        }
+
+        return result.data.update_users_by_pk;
+    } catch (error) {
+        console.error('[authService] updateNicknameInHasura network error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update nickname with full validation
+ * Checks availability in both NEAR and Hasura before saving
+ * @param nickname - New nickname
+ * @param userPublicKey - Current user's public key
+ * @param network - Network type (mainnet/testnet)
+ * @returns Result with success flag and optional error message
+ */
+export async function updateNicknameWithValidation(
+    nickname: string,
+    userPublicKey: string,
+    network: NetworkType = 'testnet'
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        // Step 1: Check if nickname is available in NEAR
+        const nearAvailable = await isNickFree(nickname, network);
+        if (!nearAvailable) {
+            return {
+                success: false,
+                error: 'Никнейм уже занят в NEAR'
+            };
+        }
+
+        // Step 2: Check if nickname is available in Hasura (excluding current user)
+        const hasuraAvailable = await isNicknameFreeInHasura(nickname, userPublicKey);
+        if (!hasuraAvailable) {
+            return {
+                success: false,
+                error: 'Никнейм уже занят другим пользователем'
+            };
+        }
+
+        // Step 3: Update locally
+        await updateNickname(nickname);
+
+        // Step 4: Update in Hasura
+        await updateNicknameInHasura(userPublicKey, nickname);
+
+        return { success: true };
+    } catch (error) {
+        console.error('[authService] updateNicknameWithValidation error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Не удалось обновить никнейм'
+        };
+    }
+}

@@ -378,3 +378,101 @@ export async function getGroupLeaderboard(
     return leaderboard;
 }
 
+// ==================== GET GLOBAL LEADERBOARD ====================
+
+export interface GlobalLeaderboardEntry {
+    user_public_key: string;
+    nickname: string | null;
+    fms_category: string;
+    workout_count: number;
+    total_points: number;
+    rank: number;
+}
+
+/**
+ * Get global leaderboard of all users ranked by total points
+ * @param limit - Maximum number of users to return (default 100)
+ * @param offset - Number of users to skip (for pagination, default 0)
+ * @returns Array of users with their stats and rank
+ */
+export async function getGlobalLeaderboard(
+    limit: number = 100,
+    offset: number = 0
+): Promise<GlobalLeaderboardEntry[]> {
+    // Get all users with their workout stats
+    const query = `
+        query GetGlobalLeaderboard($limit: Int!, $offset: Int!) {
+            users(
+                limit: $limit,
+                offset: $offset,
+                order_by: { ed25519_public_key: asc }
+            ) {
+                ed25519_public_key
+                nickname
+                fms_category
+                workout_sessions_aggregate {
+                    aggregate {
+                        count
+                        sum {
+                            total_points
+                        }
+                    }
+                }
+            }
+        }
+    `;
+
+    const data = await hasuraQuery(query, { limit, offset });
+
+    // Transform and add rank
+    const leaderboard: GlobalLeaderboardEntry[] = data.users.map((user: any) => ({
+        user_public_key: user.ed25519_public_key,
+        nickname: user.nickname,
+        fms_category: user.fms_category,
+        workout_count: user.workout_sessions_aggregate?.aggregate?.count || 0,
+        total_points: user.workout_sessions_aggregate?.aggregate?.sum?.total_points || 0,
+        rank: 0
+    }));
+
+    // Sort by total points descending
+    leaderboard.sort((a, b) => b.total_points - a.total_points);
+
+    // Assign ranks
+    leaderboard.forEach((entry, index) => {
+        entry.rank = index + 1 + offset;
+    });
+
+    return leaderboard;
+}
+
+// ==================== GET ALL USER GROUPS ====================
+
+/**
+ * Get all groups that a user belongs to
+ * @param userPublicKey - User's public key
+ * @returns Array of groups with member info
+ */
+export async function getAllUserGroups(userPublicKey: string): Promise<any[]> {
+    const query = `
+        query GetAllUserGroups($userPublicKey: String!) {
+            group_members(where: { user_public_key: { _eq: $userPublicKey } }) {
+                is_admin
+                joined_at
+                group {
+                    group_id
+                    group_name
+                    created_by
+                    created_at
+                    members_aggregate {
+                        aggregate {
+                            count
+                        }
+                    }
+                }
+            }
+        }
+    `;
+
+    const data = await hasuraQuery(query, { userPublicKey });
+    return data.group_members;
+}

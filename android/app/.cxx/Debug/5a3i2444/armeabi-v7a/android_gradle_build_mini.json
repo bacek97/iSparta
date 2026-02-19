@@ -1,0 +1,127 @@
+{
+  "buildFiles": [
+    "C:\\tmp\\classification\\iSparta\\node_modules\\@react-native-async-storage\\async-storage\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-fast-tflite\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-get-random-values\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-image-picker\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-maps\\android\\src\\main\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-reanimated\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-safe-area-context\\android\\src\\main\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-screens\\android\\src\\main\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-svg\\android\\src\\main\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-vector-icons\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-worklets-core\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native-worklets\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\react-native\\ReactAndroid\\cmake-utils\\default-app-setup\\CMakeLists.txt",
+    "C:\\tmp\\classification\\iSparta\\node_modules\\vision-camera-resize-plugin\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\Neo\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\tmp\\classification\\iSparta\\android\\app\\.cxx\\Debug\\5a3i2444\\armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\Neo\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\tmp\\classification\\iSparta\\android\\app\\.cxx\\Debug\\5a3i2444\\armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "react_codegen_RNVectorIconsSpec::@479809fae146501fd34d": {
+      "artifactName": "react_codegen_RNVectorIconsSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_safeareacontext::@7984cd80db47aa7b952a": {
+      "artifactName": "react_codegen_safeareacontext",
+      "abi": "armeabi-v7a",
+      "output": "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libreact_codegen_safeareacontext.so",
+      "runtimeFiles": [
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\97c16419c1089f82511cc6150d259292\\transformed\\jetified-fbjni-0.7.0\\prefab\\modules\\fbjni\\libs\\android.armeabi-v7a\\libfbjni.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\jsi\\libs\\android.armeabi-v7a\\libjsi.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\reactnative\\libs\\android.armeabi-v7a\\libreactnative.so"
+      ]
+    },
+    "react_codegen_RNWorkletsSpec::@c787b30dd2b0f948dced": {
+      "artifactName": "react_codegen_RNWorkletsSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "appmodules::@6890427a1f51a3e7e1df": {
+      "artifactName": "appmodules",
+      "abi": "armeabi-v7a",
+      "output": "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libappmodules.so",
+      "runtimeFiles": [
+        "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libreact_codegen_safeareacontext.so",
+        "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libreact_codegen_rnscreens.so",
+        "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libreact_codegen_rnsvg.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\97c16419c1089f82511cc6150d259292\\transformed\\jetified-fbjni-0.7.0\\prefab\\modules\\fbjni\\libs\\android.armeabi-v7a\\libfbjni.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\jsi\\libs\\android.armeabi-v7a\\libjsi.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\reactnative\\libs\\android.armeabi-v7a\\libreactnative.so"
+      ]
+    },
+    "react_codegen_RNGetRandomValuesSpec::@6e1160200c59ddcfca1e": {
+      "artifactName": "react_codegen_RNGetRandomValuesSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_RNTfliteSpec::@296f182f36326455dd18": {
+      "artifactName": "react_codegen_RNTfliteSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnsvg::@4f40eb209d0c0b4a3b65": {
+      "artifactName": "react_codegen_rnsvg",
+      "abi": "armeabi-v7a",
+      "output": "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libreact_codegen_rnsvg.so",
+      "runtimeFiles": [
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\reactnative\\libs\\android.armeabi-v7a\\libreactnative.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\jsi\\libs\\android.armeabi-v7a\\libjsi.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\97c16419c1089f82511cc6150d259292\\transformed\\jetified-fbjni-0.7.0\\prefab\\modules\\fbjni\\libs\\android.armeabi-v7a\\libfbjni.so"
+      ]
+    },
+    "react_codegen_RNMapsSpecs::@5748abef1962d24942ec": {
+      "artifactName": "react_codegen_RNMapsSpecs",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnworklets::@68f58d84d4754f193387": {
+      "artifactName": "react_codegen_rnworklets",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnasyncstorage::@1596841e19ec5b9eeffe": {
+      "artifactName": "react_codegen_rnasyncstorage",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnreanimated::@8afabad14bfffa3f8b9a": {
+      "artifactName": "react_codegen_rnreanimated",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_RNImagePickerSpec::@f66ee9a2efecfb28bee4": {
+      "artifactName": "react_codegen_RNImagePickerSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnscreens::@25bcbd507e98d3a854ad": {
+      "artifactName": "react_codegen_rnscreens",
+      "abi": "armeabi-v7a",
+      "output": "C:\\tmp\\classification\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\5a3i2444\\obj\\armeabi-v7a\\libreact_codegen_rnscreens.so",
+      "runtimeFiles": [
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\reactnative\\libs\\android.armeabi-v7a\\libreactnative.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\cb90c71b3625d5ce3e718628a90b576a\\transformed\\jetified-react-android-0.82.1-debug\\prefab\\modules\\jsi\\libs\\android.armeabi-v7a\\libjsi.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\97c16419c1089f82511cc6150d259292\\transformed\\jetified-fbjni-0.7.0\\prefab\\modules\\fbjni\\libs\\android.armeabi-v7a\\libfbjni.so"
+      ]
+    },
+    "react_codegen_RNVisionCameraResizePluginSpec::@b854915dd612a363dc6f": {
+      "artifactName": "react_codegen_RNVisionCameraResizePluginSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    }
+  }
+}

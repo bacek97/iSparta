@@ -91,8 +91,8 @@ android {
         applicationId "com.isparta"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 3
+        versionName "1.0.2"
     }
     signingConfigs {
         debug {
@@ -129,6 +129,10 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation('com.google.mediapipe:tasks-vision:0.10.29')
     implementation('androidx.camera:camera-core:1.5.1')
+    
+    // SLF4J dependencies for BackgroundGeolocation (matching module versions)
+    implementation('org.slf4j:slf4j-api:1.7.21')
+    implementation('com.github.tony19:logback-android:1.1.1-9')
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

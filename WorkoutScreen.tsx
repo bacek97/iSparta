@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, NativeModules, Dimensions, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Platform, StyleSheet, Text, NativeModules, Dimensions, TouchableOpacity, Alert, ScrollView, TextInput, Modal, FlatList } from 'react-native';
 import {
     Camera,
     useCameraDevice,
@@ -85,6 +85,89 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
     const [currentConfidence, setCurrentConfidence] = useState<number>(0);
     const [currentPresence, setCurrentPresence] = useState<number>(0);
 
+    // === Manual Mode State (workout tracking + data collection) ===
+    const [isManualMode, setIsManualMode] = useState<boolean>(true);
+    const [manualExercise, setManualExercise] = useState<string>('squats');
+    const [customExerciseName, setCustomExerciseName] = useState<string>('');
+    const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
+    const [countdown, setCountdown] = useState<number>(10);
+    const [isRecording, setIsRecording] = useState<boolean>(false);
+    const [recordedFrameCount, setRecordedFrameCount] = useState<number>(0);
+    const recordedFramesRef = useRef<{ row: string; timestamp: number }[]>([]);
+    const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Available exercises for manual mode
+    const MANUAL_EXERCISES = ['squats', 'pushups', 'situps', 'pullups', 'custom'];
+    const EXERCISE_LABELS: Record<string, string> = {
+        squats: 'Приседания',
+        pushups: 'Отжимания',
+        situps: 'Пресс',
+        pullups: 'Подтягивания',
+        custom: 'Своё...',
+    };
+    const [showExerciseDropdown, setShowExerciseDropdown] = useState(false);
+
+    // Telegram config
+    const TELEGRAM_BOT_TOKEN = '2201677056:AAGEh2J-A_w-he9VH22rPBePaWL0puqZOl4';
+    const TELEGRAM_CHAT_ID = '2201195991';
+
+    // Helper: send CSV to Telegram bot
+    const sendCsvToTelegram = async (csv: string, filename: string, caption: string) => {
+        const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/test/sendDocument`;
+        try {
+            const boundary = '----RNFormBoundary' + Math.random().toString(36).substring(2);
+            const body =
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="chat_id"\r\n\r\n${TELEGRAM_CHAT_ID}\r\n` +
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n` +
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="document"; filename="${filename}"\r\n` +
+                `Content-Type: text/csv\r\n\r\n${csv}\r\n` +
+                `--${boundary}--\r\n`;
+
+            const response = await fetch(telegramUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+                body,
+            });
+            const result = await response.json();
+            if (!result.ok) {
+                console.error('[Telegram] Error:', result);
+            }
+            return result.ok;
+        } catch (err) {
+            console.error('[Telegram] Upload error:', err);
+            return false;
+        }
+    };
+
+    // Helper: finalize current exercise recording (trim + send CSV)
+    const finalizeExerciseRecording = async (): Promise<number> => {
+        const cutoffTime = Date.now() - 5000;
+        const trimmed = recordedFramesRef.current.filter(f => f.timestamp < cutoffTime);
+        recordedFramesRef.current = [];
+        setRecordedFrameCount(0);
+
+        if (trimmed.length < 10) return trimmed.length; // too short, skip send
+
+        const csv = trimmed.map(f => f.row).join('\n');
+        const exName = manualExercise === 'custom'
+            ? customExerciseName.trim().toLowerCase().replace(/\s+/g, '_')
+            : manualExercise;
+        const filename = `${exName}_${Date.now()}.csv`;
+        const caption = `${exName}: ${trimmed.length} frames`;
+
+        await sendCsvToTelegram(csv, filename, caption);
+        return trimmed.length;
+    };
+
+    // Display settings (loaded from AsyncStorage)
+    const [showSkeleton, setShowSkeleton] = useState<boolean>(true);
+    const [showFPS, setShowFPS] = useState<boolean>(true);
+    const [showProgressBar, setShowProgressBar] = useState<boolean>(true);
+    const [showAdditionalInfo, setShowAdditionalInfo] = useState<boolean>(false);
+
     // FPS calculation window duration in seconds
     const FPS_WINDOW_SECONDS = 5;
     const MAX_FPS = 35;
@@ -104,11 +187,12 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
 
     // Rotation angle: 0, 90, 180, or 270 degrees
     // DeepFit model expects landscape orientation (width > height)
-    const [rotationAngle, setRotationAngle] = useState<0 | 90 | 180 | 270>(0);
+    const [rotationAngle, setRotationAngle] = useState<0 | 90 | 180 | 270>(90);
+    const [textStart, setTextStart] = useState<'переверни телефон на левый бок' | 'Start'>('переверни телефон на левый бок');
 
     // Flip options for mirroring coordinates
     const [flipX, setFlipX] = useState<boolean>(false);
-    const [flipY, setFlipY] = useState<boolean>(false);
+    const [flipY, setFlipY] = useState<boolean>(true);
 
     const device = useCameraDevice('front', {
         physicalDevices: ['ultra-wide-angle-camera']
@@ -133,13 +217,41 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                 const info = await getDateInfo();
                 setDateInfo(info);
 
-                // console.log('[WorkoutScreen] Loading DeepFit classifier...');
-                const model = await loadTensorflowModel(
-                    require('./models_tflite/deepfit_classifier_v3.tflite'),
-                    'nnapi'
-                );
-                // console.log('[WorkoutScreen] DeepFit classifier loaded successfully!');
-                setPluginDeepFit({ model });
+                // Load display settings
+                const storedShowSkeleton = await AsyncStorage.getItem('@iSparta:showSkeleton');
+                const storedShowFPS = await AsyncStorage.getItem('@iSparta:showFPS');
+                const storedShowProgressBar = await AsyncStorage.getItem('@iSparta:showProgressBar');
+                const storedShowAdditionalInfo = await AsyncStorage.getItem('@iSparta:showAdditionalInfo');
+                const storedManualMode = await AsyncStorage.getItem('@iSparta:manualMode');
+
+                // Apply settings (defaults: skeleton=ON, FPS=ON, progressBar=ON, additionalInfo=OFF, manualMode=ON)
+                if (storedShowSkeleton !== null) setShowSkeleton(storedShowSkeleton === 'true');
+                if (storedShowFPS !== null) setShowFPS(storedShowFPS === 'true');
+                if (storedShowProgressBar !== null) setShowProgressBar(storedShowProgressBar === 'true');
+                if (storedShowAdditionalInfo !== null) setShowAdditionalInfo(storedShowAdditionalInfo === 'true');
+                if (storedManualMode !== null) setIsManualMode(storedManualMode === 'true');
+
+                // Load camera orientation settings
+                const storedRotationAngle = await AsyncStorage.getItem('@iSparta:rotationAngle');
+                const storedFlipX = await AsyncStorage.getItem('@iSparta:flipX');
+                const storedFlipY = await AsyncStorage.getItem('@iSparta:flipY');
+
+                if (storedRotationAngle !== null) setRotationAngle(parseInt(storedRotationAngle) as 0 | 90 | 180 | 270);
+                if (storedFlipX !== null) setFlipX(storedFlipX === 'true');
+                if (storedFlipY !== null) setFlipY(storedFlipY === 'true');
+
+                // Load DeepFit classifier only in auto mode
+                if (!isManualMode) {
+                    // console.log('[WorkoutScreen] Loading DeepFit classifier...');
+                    const model = await loadTensorflowModel(
+                        require('./models_tflite/deepfit_classifier_v3.tflite'),
+                        'nnapi'
+                    );
+                    // console.log('[WorkoutScreen] DeepFit classifier loaded successfully!');
+                    setPluginDeepFit({ model });
+                } else {
+                    console.log('[WorkoutScreen] Manual mode — skipping DeepFit model loading');
+                }
             } catch (error) {
                 console.error('[WorkoutScreen] Initialization error:', error);
             }
@@ -187,10 +299,10 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
             const effectiveWidth = (rotationAngle === 90 || rotationAngle === 270) ? height : width;
             const effectiveHeight = (rotationAngle === 90 || rotationAngle === 270) ? width : height;
 
-            if (flipX) {
+            if (flipX && fixRotationAngle) {
                 newX = effectiveWidth - newX;
             }
-            if (flipY) {
+            if (flipY && fixRotationAngle) {
                 newY = effectiveHeight - newY;
             }
 
@@ -224,8 +336,8 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                 // Update the landmarks state to render them on the screen
                 setLandmarks(event.landmarks || []);
 
-                // Run DeepFit classification if model is loaded and we have landmarks
-                if (pluginDeepFit.model && event.landmarks && event.landmarks[0]) {
+                // Run DeepFit classification if model is loaded, OR process keypoints in manual mode
+                if ((pluginDeepFit.model || isManualMode) && event.landmarks && event.landmarks[0]) {
                     const pose = event.landmarks[0];
 
                     // CRITICAL: Use camera frame dimensions to match Python's approach
@@ -260,65 +372,96 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
                     try {
                         // Extract 18 keypoints for DeepFit from 33 pose landmarks
                         const deepfitKeypoints = extractDeepFitKeypoints(keypoints);
+
+                        // === Capture frame for training data ===
+                        if (isRecording && !isCountingDown) {
+                            // INTERLEAVED format: x0,y0,x1,y1,...,x17,y17 (36 floats)
+                            const row = deepfitKeypoints.map(k => `${k.x.toFixed(3)},${k.y.toFixed(3)}`).join(',');
+                            recordedFramesRef.current.push({ row, timestamp: Date.now() });
+                            setRecordedFrameCount(recordedFramesRef.current.length);
+                        }
+
+                        // === Manual mode hack: skip model inference entirely ===
+                        if (isManualMode) {
+                            const manualName = manualExercise === 'custom'
+                                ? customExerciseName.trim().toUpperCase().replace(/\s+/g, '_')
+                                : manualExercise.toUpperCase();
+                            setExerciseName(manualName);
+
+                            // Fill classification queue so getSmoothedValue() returns the right exercise
+                            if (sessionActive && workoutSession) {
+                                workoutSession.addClassification({ name: manualName as EXERCISES, confidence: 1.0 });
+
+                                if (isRecording) {
+                                    const { duration, reps, percent } = workoutSession.calculate(manualName as EXERCISES, calculateBodyAngles(keypoints));
+                                    let form = 1;
+                                    let feedback = '';
+                                    if (percent !== undefined) {
+                                        form = (percent >= 0 && percent <= 100) ? 1 : 0;
+                                        if (percent < 30) feedback = 'Начало';
+                                        else if (percent < 70) feedback = 'Выполняется';
+                                        else if (percent < 100) feedback = 'Почти';
+                                        else feedback = 'Готово!';
+                                    }
+                                    setCurrentExerciseData({ percent, form, feedback });
+                                }
+                            }
+                            return;
+                        }
+
                         const normalizedInput = normalizeKeypoints(deepfitKeypoints);
 
-                        // Run DeepFit model
+                        // Run DeepFit model (only reached in auto mode, manual mode returns above)
+                        if (!pluginDeepFit.model) return;
                         const deepfitOutputs = pluginDeepFit.model.runSync([normalizedInput]);
                         const exerciseProbs = deepfitOutputs[0] as Float32Array;
 
                         // Get raw exercise name and confidence from model
                         const detectedResult = getExerciseNameAndConfidence(exerciseProbs);
                         let detectedExercise = detectedResult.name;
-                        // const confidence = detectedResult.confidence;
                         const confidence = avg;
                         if (confidence < 0.5) {
                             detectedExercise = EXERCISES.UNKNOWN;
                         }
 
-                        // console.log(`[PoseLandmarks] Raw: ${detectedExercise}, Confidence: ${confidence.toFixed(4)}`);
-
-                        // Add to queue for smoothing (always, even for Unknown)
-                        // console.log('[DEBUG] Before if - sessionActive:', sessionActive, 'workoutSession:', !!workoutSession);
                         if (sessionActive && workoutSession) {
-                            console.log('[DEBUG] Inside if - calling calculate');
-                            workoutSession.addClassification(detectedResult);
+                            let activeExerciseName: string;
 
-                            // Get smoothed exercise name from queue (like DeepFit's workout_name_after_smoothening)
-                            const smoothedExerciseName = workoutSession.queue.getSmoothedValue();
-
-                            // console.log(`[Smoothing] Raw: ${detectedExercise}, Smoothed: ${smoothedExerciseName}`);
-
-                            // Calculate exercise metrics using workoutSession
-                            const { duration, reps, percent } = workoutSession.calculate(smoothedExerciseName, calculateBodyAngles(keypoints));
-
-                            console.log('percent283', percent);
-
-                            // Determine form and feedback based on percent
-                            let form = 1; // Good form by default
-                            let feedback = '';
-
-                            if (percent !== undefined) {
-                                // Form is good if percent is progressing (between 0-100)
-                                form = (percent >= 0 && percent <= 100) ? 1 : 0;
-
-                                // Generate feedback based on progress
-                                if (percent < 30) {
-                                    feedback = 'Start position';
-                                } else if (percent < 70) {
-                                    feedback = 'In progress';
-                                } else if (percent < 100) {
-                                    feedback = 'Almost there';
-                                } else {
-                                    feedback = 'Complete!';
-                                }
+                            if (isManualMode && isRecording) {
+                                // Manual mode: use the user-selected exercise
+                                activeExerciseName = manualExercise === 'custom'
+                                    ? customExerciseName.trim().toUpperCase().replace(/\s+/g, '_')
+                                    : manualExercise.toUpperCase();
+                            } else if (!isManualMode) {
+                                // Auto mode: use smoothed auto-detection
+                                workoutSession.addClassification(detectedResult);
+                                activeExerciseName = workoutSession.queue.getSmoothedValue();
+                            } else {
+                                // Manual mode but not recording — just show detection
+                                setPreviousExerciseName(detectedExercise);
+                                setExerciseName(detectedExercise);
+                                setCurrentExerciseData({});
+                                return;
                             }
 
-                            // Update UI with smoothed value and calculated data
-                            setPreviousExerciseName(smoothedExerciseName);
-                            setExerciseName(smoothedExerciseName);
+                            // Calculate exercise metrics
+                            const { duration, reps, percent } = workoutSession.calculate(activeExerciseName, calculateBodyAngles(keypoints));
+
+                            let form = 1;
+                            let feedback = '';
+                            if (percent !== undefined) {
+                                form = (percent >= 0 && percent <= 100) ? 1 : 0;
+                                if (percent < 30) feedback = 'Start position';
+                                else if (percent < 70) feedback = 'In progress';
+                                else if (percent < 100) feedback = 'Almost there';
+                                else feedback = 'Complete!';
+                            }
+
+                            setPreviousExerciseName(activeExerciseName);
+                            setExerciseName(activeExerciseName);
                             setCurrentExerciseData({ percent, form, feedback });
                         } else {
-                            // No active session - just update UI with raw detection
+                            // No active session
                             setPreviousExerciseName(detectedExercise);
                             setExerciseName(detectedExercise);
                             setCurrentExerciseData({});
@@ -362,7 +505,7 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
             statusSubscription.remove();
             errorSubscription.remove();
         };
-    }, [modelPath, pluginDeepFit, canProcessFrame, sessionActive, workoutSession]);
+    }, [modelPath, pluginDeepFit, canProcessFrame, sessionActive, workoutSession, isRecording, isCountingDown, isManualMode, manualExercise, customExerciseName]);
     const { resize } = useResizePlugin();
 
     useEffect(() => {
@@ -513,11 +656,11 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
         <View style={StyleSheet.absoluteFill}>
             <UltraWideCamera
                 frameProcessor={frameProcessor}
-                onOutputOrientationChanged={(orientation) => console.log('orientation', /^landscape/.test(orientation))}
+                onOutputOrientationChanged={(orientation) => console.log('orientation', setTextStart(/^landscape-right/.test(orientation) ? 'Start' : 'переверни телефон на левый бок'))}
             />
             {landmarks.length > 0 && (
                 <Svg style={StyleSheet.absoluteFill}>
-                    {landmarks.map((pose, poseIndex) => (
+                    {showSkeleton && landmarks.map((pose, poseIndex) => (
                         <React.Fragment key={`pose-${poseIndex}`}>
                             {/* Draw lines connecting landmarks */}
                             {lines.map(([from, to], lineIndex) => {
@@ -580,258 +723,342 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
 
                         return (
                             <>
-                                {/* Background for exercise name */}
-                                <Rect
-                                    x={10}
-                                    y={30}
-                                    width={300}
-                                    height={50}
-                                    fill={isUnknown ? "gray" : "black"}
-                                    opacity={0.6}
-                                    rx={8}
-                                />
-                                <SvgText
-                                    x={20}
-                                    y={55}
-                                    fontSize="36"
-                                    fontWeight="bold"
-                                    fill={isUnknown ? "lightgray" : "white"}
-                                    stroke="black"
-                                    strokeWidth="2"
-                                >
-                                    {isUnknown ? "Неизвестно" : exerciseName}
-                                </SvgText>
-
-                                {/* FPS Display - shows onPoseLandmarksDetected event frequency */}
-                                <Rect
-                                    x={320}
-                                    y={30}
-                                    width={120}
-                                    height={40}
-                                    fill="black"
-                                    opacity={0.6}
-                                    rx={8}
-                                />
-                                <SvgText
-                                    x={100}
-                                    y={55}
-                                    fontSize="28"
-                                    fontWeight="bold"
-                                    fill="lime"
-                                    stroke="black"
-                                    strokeWidth="2"
-                                >
-                                    FPS: {actualFPS.value.toFixed(1)}
-                                </SvgText>
-
-                                {/* Show exercise stats only when not Unknown */}
-                                {!isUnknown && (
+                                {/* Additional Info - Exercise name, stats, confidence, presence, duration */}
+                                {showAdditionalInfo && (
                                     <>
-                                        {/* Background for reps */}
+                                        {/* Background for exercise name */}
                                         <Rect
                                             x={10}
-                                            y={75}
-                                            width={200}
+                                            y={30}
+                                            width={300}
+                                            height={50}
+                                            fill={isUnknown ? "gray" : "black"}
+                                            opacity={0.6}
+                                            rx={8}
+                                        />
+                                        <SvgText
+                                            x={20}
+                                            y={55}
+                                            fontSize="36"
+                                            fontWeight="bold"
+                                            fill={isUnknown ? "lightgray" : "white"}
+                                            stroke="black"
+                                            strokeWidth="2"
+                                        >
+                                            {isUnknown ? "Неизвестно" : exerciseName}
+                                        </SvgText>
+
+                                        {/* Show exercise stats only when not Unknown */}
+                                        {!isUnknown && (
+                                            <>
+                                                {/* Background for reps */}
+                                                <Rect
+                                                    x={10}
+                                                    y={75}
+                                                    width={200}
+                                                    height={40}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={105}
+                                                    fontSize="28"
+                                                    fontWeight="bold"
+                                                    fill="white"
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    Reps: {displayReps}
+                                                </SvgText>
+                                                {/* Background for form */}
+                                                <Rect
+                                                    x={10}
+                                                    y={120}
+                                                    width={180}
+                                                    height={38}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={148}
+                                                    fontSize="24"
+                                                    fontWeight="bold"
+                                                    fill={displayForm === 1 ? "lime" : "red"}
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    Form: {displayForm === 1 ? 'Good' : 'Bad'}
+                                                </SvgText>
+                                                {/* Background for feedback */}
+                                                <Rect
+                                                    x={10}
+                                                    y={163}
+                                                    width={280}
+                                                    height={38}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={191}
+                                                    fontSize="24"
+                                                    fontWeight="bold"
+                                                    fill="yellow"
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    {displayFeedback}
+                                                </SvgText>
+                                                {/* Background for progress */}
+                                                <Rect
+                                                    x={10}
+                                                    y={206}
+                                                    width={250}
+                                                    height={38}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={234}
+                                                    fontSize="24"
+                                                    fontWeight="bold"
+                                                    fill="cyan"
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    Progress: {displayPercent.toFixed(1)}%
+                                                </SvgText>
+                                                {/* Background for confidence */}
+                                                <Rect
+                                                    x={10}
+                                                    y={249}
+                                                    width={250}
+                                                    height={38}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={277}
+                                                    fontSize="24"
+                                                    fontWeight="bold"
+                                                    fill="orange"
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    Confidence: {(currentConfidence * 100).toFixed(1)}%
+                                                </SvgText>
+                                                {/* Background for presence */}
+                                                <Rect
+                                                    x={10}
+                                                    y={335}
+                                                    width={250}
+                                                    height={38}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={363}
+                                                    fontSize="24"
+                                                    fontWeight="bold"
+                                                    fill="magenta"
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    Presence: {(currentPresence * 100).toFixed(1)}%
+                                                </SvgText>
+                                                {/* Background for duration */}
+                                                <Rect
+                                                    x={10}
+                                                    y={292}
+                                                    width={250}
+                                                    height={38}
+                                                    fill="black"
+                                                    opacity={0.6}
+                                                    rx={8}
+                                                />
+                                                <SvgText
+                                                    x={20}
+                                                    y={320}
+                                                    fontSize="24"
+                                                    fontWeight="bold"
+                                                    fill="lightgreen"
+                                                    stroke="black"
+                                                    strokeWidth="2"
+                                                >
+                                                    Duration: {sessionActive && workoutSession ? workoutSession.s.exercises[exerciseName as EXERCISES]?.duration || 0 : 0}s
+                                                </SvgText>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+
+                                {/* FPS Display - shows onPoseLandmarksDetected event frequency */}
+                                {showFPS && (
+                                    <>
+                                        <Rect
+                                            x={320}
+                                            y={30}
+                                            width={120}
                                             height={40}
                                             fill="black"
                                             opacity={0.6}
                                             rx={8}
                                         />
                                         <SvgText
-                                            x={20}
-                                            y={105}
+                                            x={100}
+                                            y={55}
                                             fontSize="28"
+                                            fontWeight="bold"
+                                            fill="lime"
+                                            stroke="black"
+                                            strokeWidth="2"
+                                        >
+                                            FPS: {actualFPS.value.toFixed(1)}
+                                        </SvgText>
+                                    </>
+                                )}
+
+                                {/* Vertical Progress Bar */}
+                                {showProgressBar && (
+                                    <>
+                                        {/* Progress bar background (outline) */}
+                                        <Rect
+                                            x={screenWidth - 70}
+                                            y={50}
+                                            width={50}
+                                            height={300}
+                                            fill="none"
+                                            stroke={
+                                                exerciseName === EXERCISES.SQUATS ? '#00ff00' :
+                                                    exerciseName === EXERCISES.PUSHUPS ? '#00bfff' :
+                                                        exerciseName === EXERCISES.LUNGES ? '#ff6b00' :
+                                                            exerciseName === EXERCISES.SITUPS ? '#ff00ff' :
+                                                                exerciseName === EXERCISES.BICEP_CURLS ? '#ffff00' :
+                                                                    '#00ff00'
+                                            }
+                                            strokeWidth="3"
+                                        />
+                                        {/* Progress bar fill (fills from bottom to top) */}
+                                        <Rect
+                                            x={screenWidth - 70}
+                                            y={50 + (300 * (100 - displayPercent) / 100)}
+                                            width={50}
+                                            height={300 * displayPercent / 100}
+                                            fill={
+                                                exerciseName === EXERCISES.SQUATS ? '#00ff00' :
+                                                    exerciseName === EXERCISES.PUSHUPS ? '#00bfff' :
+                                                        exerciseName === EXERCISES.LUNGES ? '#ff6b00' :
+                                                            exerciseName === EXERCISES.SITUPS ? '#ff00ff' :
+                                                                exerciseName === EXERCISES.BICEP_CURLS ? '#ffff00' :
+                                                                    '#00ff00'
+                                            }
+                                            opacity={0.8}
+                                        />
+                                        {/* Percentage text on progress bar */}
+                                        <SvgText
+                                            x={screenWidth - 45}
+                                            y={370}
+                                            fontSize="20"
                                             fontWeight="bold"
                                             fill="white"
                                             stroke="black"
                                             strokeWidth="2"
+                                            textAnchor="middle"
                                         >
-                                            Reps: {displayReps}
+                                            {Math.round(displayPercent)}%
                                         </SvgText>
-                                        {/* Background for form */}
-                                        <Rect
-                                            x={10}
-                                            y={120}
-                                            width={180}
-                                            height={38}
-                                            fill="black"
-                                            opacity={0.6}
-                                            rx={8}
-                                        />
-                                        <SvgText
-                                            x={20}
-                                            y={148}
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill={displayForm === 1 ? "lime" : "red"}
-                                            stroke="black"
-                                            strokeWidth="2"
-                                        >
-                                            Form: {displayForm === 1 ? 'Good' : 'Bad'}
-                                        </SvgText>
-                                        {/* Background for feedback */}
-                                        <Rect
-                                            x={10}
-                                            y={163}
-                                            width={280}
-                                            height={38}
-                                            fill="black"
-                                            opacity={0.6}
-                                            rx={8}
-                                        />
-                                        <SvgText
-                                            x={20}
-                                            y={191}
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="yellow"
-                                            stroke="black"
-                                            strokeWidth="2"
-                                        >
-                                            {displayFeedback}
-                                        </SvgText>
-                                        {/* Background for progress */}
-                                        <Rect
-                                            x={10}
-                                            y={206}
-                                            width={250}
-                                            height={38}
-                                            fill="black"
-                                            opacity={0.6}
-                                            rx={8}
-                                        />
-                                        <SvgText
-                                            x={20}
-                                            y={234}
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="cyan"
-                                            stroke="black"
-                                            strokeWidth="2"
-                                        >
-                                            Progress: {displayPercent.toFixed(1)}%
-                                        </SvgText>
-                                        {/* Background for confidence */}
-                                        <Rect
-                                            x={10}
-                                            y={249}
-                                            width={250}
-                                            height={38}
-                                            fill="black"
-                                            opacity={0.6}
-                                            rx={8}
-                                        />
-                                        <SvgText
-                                            x={20}
-                                            y={277}
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="orange"
-                                            stroke="black"
-                                            strokeWidth="2"
-                                        >
-                                            Confidence: {(currentConfidence * 100).toFixed(1)}%
-                                        </SvgText>
-                                        {/* Background for presence */}
-                                        <Rect
-                                            x={10}
-                                            y={335}
-                                            width={250}
-                                            height={38}
-                                            fill="black"
-                                            opacity={0.6}
-                                            rx={8}
-                                        />
-                                        <SvgText
-                                            x={20}
-                                            y={363}
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="magenta"
-                                            stroke="black"
-                                            strokeWidth="2"
-                                        >
-                                            Presence: {(currentPresence * 100).toFixed(1)}%
-                                        </SvgText>
-                                        {/* Background for duration */}
-                                        <Rect
-                                            x={10}
-                                            y={292}
-                                            width={250}
-                                            height={38}
-                                            fill="black"
-                                            opacity={0.6}
-                                            rx={8}
-                                        />
-                                        <SvgText
-                                            x={20}
-                                            y={320}
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="lightgreen"
-                                            stroke="black"
-                                            strokeWidth="2"
-                                        >
-                                            Duration: {sessionActive && workoutSession ? workoutSession.s.exercises[exerciseName as EXERCISES]?.duration || 0 : 0}s
-                                        </SvgText>
-
-                                        {/* Vertical Progress Bar */}
-                                        <>
-                                            {/* Progress bar background (outline) */}
-                                            <Rect
-                                                x={screenWidth - 70}
-                                                y={50}
-                                                width={50}
-                                                height={300}
-                                                fill="none"
-                                                stroke={
-                                                    exerciseName === EXERCISES.SQUATS ? '#00ff00' :
-                                                        exerciseName === EXERCISES.PUSHUPS ? '#00bfff' :
-                                                            exerciseName === EXERCISES.LUNGES ? '#ff6b00' :
-                                                                exerciseName === EXERCISES.SITUPS ? '#ff00ff' :
-                                                                    exerciseName === EXERCISES.BICEP_CURLS ? '#ffff00' :
-                                                                        '#00ff00'
-                                                }
-                                                strokeWidth="3"
-                                            />
-                                            {/* Progress bar fill (fills from bottom to top) */}
-                                            <Rect
-                                                x={screenWidth - 70}
-                                                y={50 + (300 * (100 - displayPercent) / 100)}
-                                                width={50}
-                                                height={300 * displayPercent / 100}
-                                                fill={
-                                                    exerciseName === EXERCISES.SQUATS ? '#00ff00' :
-                                                        exerciseName === EXERCISES.PUSHUPS ? '#00bfff' :
-                                                            exerciseName === EXERCISES.LUNGES ? '#ff6b00' :
-                                                                exerciseName === EXERCISES.SITUPS ? '#ff00ff' :
-                                                                    exerciseName === EXERCISES.BICEP_CURLS ? '#ffff00' :
-                                                                        '#00ff00'
-                                                }
-                                                opacity={0.8}
-                                            />
-                                            {/* Percentage text on progress bar */}
-                                            <SvgText
-                                                x={screenWidth - 45}
-                                                y={370}
-                                                fontSize="20"
-                                                fontWeight="bold"
-                                                fill="white"
-                                                stroke="black"
-                                                strokeWidth="2"
-                                                textAnchor="middle"
-                                            >
-                                                {Math.round(displayPercent)}%
-                                            </SvgText>
-                                        </>
                                     </>
-                                )
-                                }
+                                )}
                             </>
                         );
                     })()}
                 </Svg>
             )}
+
+            {/* Manual Mode Overlay */}
+            {isManualMode && (
+                <View style={styles.recordingOverlay}>
+                    {/* Recording indicator */}
+                    {isRecording && (
+                        <View style={styles.recordingIndicator}>
+                            <View style={styles.recordingDot} />
+                            <Text style={styles.recordingIndicatorText}>REC • {recordedFrameCount} frames</Text>
+                        </View>
+                    )}
+
+                    {/* Countdown overlay */}
+                    {isCountingDown && (
+                        <View style={styles.countdownOverlay}>
+                            <Text style={styles.countdownText}>{countdown}</Text>
+                            <Text style={styles.countdownLabel}>Get ready...</Text>
+                        </View>
+                    )}
+                </View>
+            )}
+
+            {/* Exercise Dropdown - top left */}
+            {isManualMode && (
+                <View style={styles.exerciseDropdownContainer}>
+                    <TouchableOpacity
+                        style={[styles.exerciseDropdownButton, (isRecording || isCountingDown) && styles.buttonDisabled]}
+                        disabled={isRecording || isCountingDown}
+                        onPress={() => setShowExerciseDropdown(true)}
+                    >
+                        <Text style={styles.exerciseDropdownButtonText}>
+                            {EXERCISE_LABELS[manualExercise] || manualExercise} ▼
+                        </Text>
+                    </TouchableOpacity>
+
+                    <Modal
+                        visible={showExerciseDropdown}
+                        transparent
+                        animationType="fade"
+                        onRequestClose={() => setShowExerciseDropdown(false)}
+                    >
+                        <TouchableOpacity
+                            style={styles.dropdownOverlay}
+                            activeOpacity={1}
+                            onPress={() => setShowExerciseDropdown(false)}
+                        >
+                            <View style={styles.dropdownMenu}>
+                                <Text style={styles.dropdownTitle}>Упражнение</Text>
+                                {MANUAL_EXERCISES.map(ex => (
+                                    <TouchableOpacity
+                                        key={ex}
+                                        style={[
+                                            styles.dropdownItem,
+                                            manualExercise === ex && styles.dropdownItemActive,
+                                        ]}
+                                        onPress={() => {
+                                            setManualExercise(ex);
+                                            setShowExerciseDropdown(false);
+                                        }}
+                                    >
+                                        <Text style={[
+                                            styles.dropdownItemText,
+                                            manualExercise === ex && styles.dropdownItemTextActive,
+                                        ]}>
+                                            {EXERCISE_LABELS[ex] || ex}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
+                </View>
+            )}
+
 
             {/* Persistent Exercise Counters - Always visible */}
             <View style={styles.persistentCounters}>
@@ -855,111 +1082,231 @@ function WorkoutScreen({ modelPath = 'models_tflite/mediapipe/full/pose_landmark
 
             {/* Control buttons */}
             <View style={styles.buttonContainer}>
-                {/* Session control */}
-                <TouchableOpacity
-                    style={[styles.button, sessionActive ? styles.buttonDanger : styles.buttonSuccess]}
-                    onPress={async () => {
-                        if (sessionActive) {
-                            // End session - complete and save
-                            // console.log('[WorkoutScreen] Ending session...');
-                            if (workoutSession) {
-                                const sessionJson = workoutSession.getJson();
-                                const sessionData = JSON.parse(sessionJson);
 
-                                // Save to AsyncStorage
-                                await AsyncStorage.setItem(`session_${sessionData.sessionId}`, sessionJson);
+                {isManualMode ? (
+                    /* === MANUAL MODE: workout tracking + data collection === */
+                    <>
+                        {/* Exercise picker removed — using dropdown at top-left */}
 
-                                // Auto-sync to server if enabled
-                                try {
-                                    const { autoSyncWorkout } = await import('./autoSyncService');
-                                    const { getCurrentUser } = await import('./authService');
+                        {/* Custom exercise name input */}
+                        {manualExercise === 'custom' && (
+                            <TextInput
+                                style={styles.customInput}
+                                placeholder="Имя упражнения (латиницей)"
+                                placeholderTextColor="#999"
+                                value={customExerciseName}
+                                onChangeText={setCustomExerciseName}
+                                autoCapitalize="none"
+                                editable={!isRecording && !isCountingDown}
+                            />
+                        )}
 
-                                    const userData = await getCurrentUser();
-                                    if (userData) {
-                                        await autoSyncWorkout(sessionData, {
-                                            publicKey: userData.publicKey,
-                                            fmsCategory: 'JUNIOR', // TODO: Get from user profile
-                                        });
+                        {/* Start exercise / Done with exercise */}
+                        <View style={styles.recordingButtons}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.button,
+                                    styles.buttonSuccess,
+                                    { flex: 1 },
+                                    (isRecording || isCountingDown) && styles.buttonDisabled
+                                ]}
+                                disabled={isRecording || isCountingDown}
+                                onPress={() => {
+                                    if (manualExercise === 'custom' && !customExerciseName.trim()) {
+                                        Alert.alert('Ошибка', 'Введите имя упражнения');
+                                        return;
                                     }
-                                } catch (syncError) {
-                                    console.log('Auto-sync skipped or failed:', syncError);
-                                    // Don't block workout save if sync fails
+
+                                    // Create workout session if not yet started
+                                    if (!workoutSession) {
+                                        const newSession = new WorkoutSession();
+                                        setWorkoutSession(newSession);
+                                        setSessionActive(true);
+                                    }
+
+                                    // Reset recorded frames for this exercise
+                                    recordedFramesRef.current = [];
+                                    setRecordedFrameCount(0);
+
+                                    // Start 10-second countdown
+                                    setCountdown(10);
+                                    setIsCountingDown(true);
+
+                                    let count = 10;
+                                    countdownIntervalRef.current = setInterval(() => {
+                                        count -= 1;
+                                        setCountdown(count);
+                                        if (count <= 0) {
+                                            if (countdownIntervalRef.current) {
+                                                clearInterval(countdownIntervalRef.current);
+                                                countdownIntervalRef.current = null;
+                                            }
+                                            setIsCountingDown(false);
+                                            setIsRecording(true);
+                                        }
+                                    }, 1000);
+                                }}
+                            >
+                                <Text style={styles.buttonText}>▶ Старт</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.button,
+                                    styles.buttonWarning,
+                                    { flex: 1 },
+                                    !isRecording && styles.buttonDisabled
+                                ]}
+                                disabled={!isRecording}
+                                onPress={async () => {
+                                    // Stop recording this exercise
+                                    setIsRecording(false);
+                                    if (countdownIntervalRef.current) {
+                                        clearInterval(countdownIntervalRef.current);
+                                        countdownIntervalRef.current = null;
+                                    }
+                                    setIsCountingDown(false);
+
+                                    // Trim last 5s + send CSV to Telegram
+                                    const framesSent = await finalizeExerciseRecording();
+                                    if (framesSent >= 10) {
+                                        Alert.alert('✅ Упражнение завершено', `Отправлено ${framesSent} кадров в Telegram.\nВыберите следующее упражнение или завершите тренировку.`);
+                                    } else {
+                                        Alert.alert('⚠️ Мало данных', 'Запись слишком короткая (менее 5 секунд), CSV не отправлен.');
+                                    }
+                                }}
+                            >
+                                <Text style={styles.buttonText}>✓ Готово</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* End Session button (saves all results to profile) */}
+                        {sessionActive && (
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonDanger]}
+                                onPress={async () => {
+                                    // If still recording, finalize current exercise first
+                                    if (isRecording) {
+                                        setIsRecording(false);
+                                        if (countdownIntervalRef.current) {
+                                            clearInterval(countdownIntervalRef.current);
+                                            countdownIntervalRef.current = null;
+                                        }
+                                        setIsCountingDown(false);
+                                        await finalizeExerciseRecording();
+                                    }
+
+                                    // Save session (same as auto mode)
+                                    if (workoutSession) {
+                                        const sessionJson = workoutSession.getJson();
+                                        const sessionData = JSON.parse(sessionJson);
+
+                                        await AsyncStorage.setItem(`session_${sessionData.sessionId}`, sessionJson);
+
+                                        try {
+                                            const { autoSyncWorkout } = await import('./autoSyncService');
+                                            const { getCurrentUser } = await import('./authService');
+                                            const userData = await getCurrentUser();
+                                            if (userData) {
+                                                await autoSyncWorkout(sessionData, {
+                                                    publicKey: userData.publicKey,
+                                                    fmsCategory: 'JUNIOR',
+                                                });
+                                            }
+                                        } catch (syncError) {
+                                            console.log('Auto-sync skipped:', syncError);
+                                        }
+
+                                        const exerciseCount = Object.values(sessionData.exercises).filter(
+                                            (ex: any) => ex.duration > 0 || (ex.reps && ex.reps > 0)
+                                        ).length;
+
+                                        try {
+                                            const { earnTime } = await import('./timeBankService');
+                                            const { TimeEarningSource } = await import('./appLockTypes');
+                                            const squatReps = sessionData.exercises?.SQUATS?.reps || 0;
+                                            const pushupReps = sessionData.exercises?.PUSHUPS?.reps || 0;
+                                            let totalEarned = 0;
+                                            if (squatReps > 0) { await earnTime(TimeEarningSource.SQUATS, squatReps); totalEarned += squatReps; }
+                                            if (pushupReps > 0) { await earnTime(TimeEarningSource.PUSHUPS, pushupReps); totalEarned += pushupReps; }
+                                            if (totalEarned > 0) console.log(`[WorkoutScreen] Earned ${totalEarned} minutes`);
+                                        } catch (earnError) {
+                                            console.log('Time earning skipped:', earnError);
+                                        }
+
+                                        Alert.alert('Тренировка завершена', `Сохранено ${exerciseCount} упражнений!`);
+                                    }
+                                    setSessionActive(false);
+                                    setWorkoutSession(null);
+                                    setCurrentExerciseData({});
+                                    setPreviousExerciseName('');
+                                }}
+                            >
+                                <Text style={styles.buttonText}>⏹ Завершить тренировку</Text>
+                            </TouchableOpacity>
+                        )}
+                    </>
+                ) : (
+                    /* === AUTO MODE === */
+                    <TouchableOpacity
+                        style={[styles.button, sessionActive ? styles.buttonDanger : styles.buttonSuccess]}
+                        onPress={async () => {
+                            if (sessionActive) {
+                                if (workoutSession) {
+                                    const sessionJson = workoutSession.getJson();
+                                    const sessionData = JSON.parse(sessionJson);
+
+                                    await AsyncStorage.setItem(`session_${sessionData.sessionId}`, sessionJson);
+
+                                    try {
+                                        const { autoSyncWorkout } = await import('./autoSyncService');
+                                        const { getCurrentUser } = await import('./authService');
+                                        const userData = await getCurrentUser();
+                                        if (userData) {
+                                            await autoSyncWorkout(sessionData, {
+                                                publicKey: userData.publicKey,
+                                                fmsCategory: 'JUNIOR',
+                                            });
+                                        }
+                                    } catch (syncError) {
+                                        console.log('Auto-sync skipped:', syncError);
+                                    }
+
+                                    const exerciseCount = Object.values(sessionData.exercises).filter(
+                                        (ex: any) => ex.duration > 0 || (ex.reps && ex.reps > 0)
+                                    ).length;
+
+                                    try {
+                                        const { earnTime } = await import('./timeBankService');
+                                        const { TimeEarningSource } = await import('./appLockTypes');
+                                        const squatReps = sessionData.exercises?.SQUATS?.reps || 0;
+                                        const pushupReps = sessionData.exercises?.PUSHUPS?.reps || 0;
+                                        let totalEarned = 0;
+                                        if (squatReps > 0) { await earnTime(TimeEarningSource.SQUATS, squatReps); totalEarned += squatReps; }
+                                        if (pushupReps > 0) { await earnTime(TimeEarningSource.PUSHUPS, pushupReps); totalEarned += pushupReps; }
+                                        if (totalEarned > 0) console.log(`[WorkoutScreen] Earned ${totalEarned} minutes`);
+                                    } catch (earnError) {
+                                        console.log('Time earning skipped:', earnError);
+                                    }
+
+                                    Alert.alert('Session Complete', `Saved ${exerciseCount} exercises!\n\nSession data:\n${sessionJson}`);
                                 }
-
-                                // Count exercises with data
-                                const exerciseCount = Object.values(sessionData.exercises).filter(
-                                    (ex: any) => ex.duration > 0 || (ex.reps && ex.reps > 0)
-                                ).length;
-
-                                Alert.alert('Session Complete', `Saved ${exerciseCount} exercises!\n\nSession data:\n${sessionJson}`);
-                            }
-                            setSessionActive(false);
-                            setWorkoutSession(null);
-                            // Reset exercise data
-                            setCurrentExerciseData({});
-                            setPreviousExerciseName('');
-                        } else {
-                            // Start session
-                            console.log('[DEBUG] Start session button pressed, userId:', userId);
-                            if (userId) {
-                                // Create new WorkoutSession
+                                setSessionActive(false);
+                                setWorkoutSession(null);
+                                setCurrentExerciseData({});
+                                setPreviousExerciseName('');
+                            } else {
                                 const newSession = new WorkoutSession();
-                                console.log('[DEBUG] Created new session:', newSession);
                                 setWorkoutSession(newSession);
                                 setSessionActive(true);
-                                console.log('[DEBUG] Session activated!');
                                 Alert.alert('Session Started', 'Start exercising!');
-                            } else {
-                                console.log('[DEBUG] No userId - cannot start session');
                             }
-                        }
-                    }}
-                >
-                    <Text style={styles.buttonText}>
-                        {sessionActive ? 'End Session' : 'Start Session'}
-                    </Text>
-                </TouchableOpacity>
-
-                {/* Rotation angle selector */}
-                <TouchableOpacity
-                    style={[styles.button, styles.buttonRotation]}
-                    onPress={() => {
-                        // Cycle through rotation angles: 0 -> 90 -> 180 -> 270 -> 0
-                        const angles: (0 | 90 | 180 | 270)[] = [0, 90, 180, 270];
-                        const currentIndex = angles.indexOf(rotationAngle);
-                        const nextIndex = (currentIndex + 1) % angles.length;
-                        setRotationAngle(angles[nextIndex]);
-                    }}
-                >
-                    <Text style={styles.buttonText}>
-                        🔄 Rotation: {rotationAngle}°
-                    </Text>
-                </TouchableOpacity>
-
-                {/* Flip controls */}
-                <View style={styles.testingButtons}>
-                    <TouchableOpacity
-                        style={[styles.button, flipX ? styles.buttonSuccess : styles.buttonInfo]}
-                        onPress={() => setFlipX(!flipX)}
+                        }}
                     >
                         <Text style={styles.buttonText}>
-                            ↔️ Flip X: {flipX ? 'ON' : 'OFF'}
+                            {sessionActive ? 'End Session' : textStart}
                         </Text>
                     </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.button, flipY ? styles.buttonSuccess : styles.buttonInfo]}
-                        onPress={() => setFlipY(!flipY)}
-                    >
-                        <Text style={styles.buttonText}>
-                            ↕️ Flip Y: {flipY ? 'ON' : 'OFF'}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Date info */}
-                {dateInfo && (
-                    <Text style={styles.dateInfo}>{dateInfo}</Text>
                 )}
             </View>
         </View >
@@ -1017,6 +1364,101 @@ const styles = StyleSheet.create({
     buttonRotation: {
         backgroundColor: '#9c27b0',
     },
+    buttonMode: {
+        backgroundColor: '#6f42c1',
+    },
+    buttonDisabled: {
+        opacity: 0.4,
+    },
+    recordingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
+    },
+    recordingIndicator: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(220, 53, 69, 0.85)',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    recordingDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#ff0000',
+        marginRight: 8,
+    },
+    recordingIndicatorText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    countdownOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    countdownText: {
+        fontSize: 120,
+        fontWeight: 'bold',
+        color: 'white',
+    },
+    countdownLabel: {
+        fontSize: 28,
+        color: '#ccc',
+        marginTop: 10,
+    },
+    exercisePicker: {
+        maxHeight: 50,
+        flexGrow: 0,
+    },
+    exerciseChip: {
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        marginRight: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    exerciseChipActive: {
+        backgroundColor: '#6f42c1',
+        borderColor: '#9b59b6',
+    },
+    exerciseChipText: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    exerciseChipTextActive: {
+        color: 'white',
+    },
+    customInput: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)',
+        borderRadius: 10,
+        padding: 12,
+        color: 'white',
+        fontSize: 16,
+    },
+    recordingButtons: {
+        flexDirection: 'row',
+        gap: 10,
+    },
     persistentCounters: {
         position: 'absolute',
         top: 20,
@@ -1050,6 +1492,65 @@ const styles = StyleSheet.create({
         fontSize: 12,
         textAlign: 'center',
         marginTop: 2,
+    },
+    exerciseDropdownContainer: {
+        position: 'absolute',
+        top: 20,
+        left: 20,
+        zIndex: 10,
+    },
+    exerciseDropdownButton: {
+        backgroundColor: 'rgba(111, 66, 193, 0.85)',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 20,
+        minWidth: 140,
+        alignItems: 'center',
+    },
+    exerciseDropdownButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    dropdownOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-start',
+        paddingTop: 80,
+        paddingLeft: 20,
+    },
+    dropdownMenu: {
+        backgroundColor: '#1C1C1E',
+        borderRadius: 12,
+        padding: 8,
+        width: 220,
+        borderWidth: 1,
+        borderColor: '#38383A',
+    },
+    dropdownTitle: {
+        color: '#8E8E93',
+        fontSize: 12,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    dropdownItem: {
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 8,
+    },
+    dropdownItemActive: {
+        backgroundColor: '#6f42c1',
+    },
+    dropdownItemText: {
+        color: 'rgba(255,255,255,0.8)',
+        fontSize: 16,
+    },
+    dropdownItemTextActive: {
+        color: 'white',
+        fontWeight: 'bold',
     },
 });
 

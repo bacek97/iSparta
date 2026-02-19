@@ -3,7 +3,7 @@
  * Manages step counting, storage, and sync with server
  */
 
-import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import { NativeModules, NativeEventEmitter, Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ExerciseSet } from './common_types';
 import { getVirtualDate } from './testingUtils';
@@ -53,6 +53,52 @@ export async function isStepCounterAvailable(): Promise<boolean> {
         return await StepCounter.isAvailable();
     } catch (error) {
         console.error('[StepCounterService] Error checking availability:', error);
+        return false;
+    }
+}
+
+/**
+ * Request ACTIVITY_RECOGNITION permission (required on Android 10+ / API 29+)
+ * Returns true if permission is granted or not needed (iOS/older Android)
+ */
+export async function requestActivityRecognitionPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+        // iOS doesn't need this permission
+        return true;
+    }
+
+    // ACTIVITY_RECOGNITION permission is only needed on Android 10+ (API 29+)
+    // PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION is available in RN 0.63+
+    const activityRecognitionPermission = 'android.permission.ACTIVITY_RECOGNITION';
+
+    try {
+        // Check if already granted
+        const hasPermission = await PermissionsAndroid.check(
+            activityRecognitionPermission as any
+        );
+
+        if (hasPermission) {
+            console.log('[StepCounterService] ACTIVITY_RECOGNITION permission already granted');
+            return true;
+        }
+
+        // Request permission
+        const result = await PermissionsAndroid.request(
+            activityRecognitionPermission as any,
+            {
+                title: 'Step Counter Permission',
+                message: 'iSparta needs access to your physical activity to count steps during running',
+                buttonNeutral: 'Ask Me Later',
+                buttonNegative: 'Cancel',
+                buttonPositive: 'OK',
+            }
+        );
+
+        const granted = result === PermissionsAndroid.RESULTS.GRANTED;
+        console.log('[StepCounterService] ACTIVITY_RECOGNITION permission result:', result, 'granted:', granted);
+        return granted;
+    } catch (error) {
+        console.error('[StepCounterService] Error requesting ACTIVITY_RECOGNITION permission:', error);
         return false;
     }
 }

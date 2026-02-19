@@ -93,3 +93,17 @@ jest.mock('@aakashsajjad/react-native-background-geolocation', () => ({
         setConfig: jest.fn(),
     }
 }));
+
+// Mock @notifee/react-native for notifications
+jest.mock('@notifee/react-native', () => ({
+    createChannel: jest.fn(() => Promise.resolve()),
+    displayNotification: jest.fn(() => Promise.resolve()),
+    requestPermission: jest.fn(() => Promise.resolve({ authorizationStatus: 1 })),
+    AndroidImportance: { HIGH: 4 },
+    AndroidVisibility: { PUBLIC: 1 },
+    default: {
+        createChannel: jest.fn(() => Promise.resolve()),
+        displayNotification: jest.fn(() => Promise.resolve()),
+        requestPermission: jest.fn(() => Promise.resolve({ authorizationStatus: 1 })),
+    },
+}));

@@ -268,4 +268,39 @@ describe('AuthService', () => {
             expect(AsyncStorage.getItem).toHaveBeenCalledWith('auth_mnemonic');
         });
     });
+
+    describe('autoRegister', () => {
+        it('should auto-register with generated mnemonic', async () => {
+            (AsyncStorage.multiSet as jest.Mock).mockResolvedValueOnce(undefined);
+
+            const result = await AuthService.autoRegister();
+
+            expect(result).toBe(true);
+            expect(AsyncStorage.multiSet).toHaveBeenCalled();
+
+            // Verify that multiSet was called with correct keys
+            const callArgs = (AsyncStorage.multiSet as jest.Mock).mock.calls[0][0];
+            expect(callArgs.some((arg: string[]) => arg[0] === 'auth_mnemonic')).toBe(true);
+            expect(callArgs.some((arg: string[]) => arg[0] === 'auth_public_key')).toBe(true);
+            expect(callArgs.some((arg: string[]) => arg[0] === 'auth_network')).toBe(true);
+        });
+
+        it('should return false on error', async () => {
+            (AsyncStorage.multiSet as jest.Mock).mockRejectedValueOnce(new Error('Storage error'));
+
+            const result = await AuthService.autoRegister();
+
+            expect(result).toBe(false);
+        });
+    });
+
+    describe('updateNickname', () => {
+        it('should update nickname in storage', async () => {
+            (AsyncStorage.setItem as jest.Mock).mockResolvedValueOnce(undefined);
+
+            await AuthService.updateNickname('testuser');
+
+            expect(AsyncStorage.setItem).toHaveBeenCalledWith('auth_nickname', 'testuser');
+        });
+    });
 });

@@ -6,34 +6,30 @@ import {
 } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import Navigation from './Navigation';
-import AuthNavigator from './AuthNavigator';
-import CameraScreen from './ultraWideCamera';
 import { useState, useEffect } from 'react';
-import { isAuthenticated } from './authService';
+import { isAuthenticated, autoRegister } from './authService';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
-  const [isAuthed, setIsAuthed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuthStatus();
+    initializeAuth();
   }, []);
 
-  async function checkAuthStatus() {
+  async function initializeAuth() {
     try {
       const authed = await isAuthenticated();
-      setIsAuthed(authed);
+      if (!authed) {
+        // Auto-register on first launch
+        console.log('[App] First launch - auto-registering...');
+        await autoRegister();
+      }
     } catch (error) {
-      console.error('Auth check error:', error);
-      setIsAuthed(false);
+      console.error('Auth initialization error:', error);
     } finally {
       setIsLoading(false);
     }
-  }
-
-  function handleAuthSuccess() {
-    setIsAuthed(true);
   }
 
   if (isLoading) {
@@ -51,12 +47,7 @@ function App() {
       <NavigationContainer>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
         <View style={StyleSheet.absoluteFill}>
-          {isAuthed ? (
-            <Navigation />
-          ) : (
-            <AuthNavigator onAuthSuccess={handleAuthSuccess} />
-          )}
-          {/* <CameraScreen /> */}
+          <Navigation />
         </View>
       </NavigationContainer>
     </SafeAreaProvider>
@@ -89,3 +80,4 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+

@@ -1,0 +1,79 @@
+{
+  "buildFiles": [
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\@shopify\\react-native-skia\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\react-native-fast-tflite\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\react-native-reanimated\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\react-native-safe-area-context\\android\\src\\main\\jni\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\react-native-worklets-core\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\react-native-worklets\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\react-native\\ReactAndroid\\cmake-utils\\default-app-setup\\CMakeLists.txt",
+    "C:\\tmp\\isparta1\\iSparta\\node_modules\\vision-camera-resize-plugin\\android\\build\\generated\\source\\codegen\\jni\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\Neo\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\tmp\\isparta1\\iSparta\\android\\app\\.cxx\\Debug\\101f423o\\armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\Neo\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\tmp\\isparta1\\iSparta\\android\\app\\.cxx\\Debug\\101f423o\\armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "react_codegen_rnreanimated::@8afabad14bfffa3f8b9a": {
+      "artifactName": "react_codegen_rnreanimated",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_safeareacontext::@7984cd80db47aa7b952a": {
+      "artifactName": "react_codegen_safeareacontext",
+      "abi": "armeabi-v7a",
+      "output": "C:\\tmp\\isparta1\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\101f423o\\obj\\armeabi-v7a\\libreact_codegen_safeareacontext.so",
+      "runtimeFiles": [
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\5fa135f9220cf0ae1e3ee40cd371125b\\transformed\\fbjni-0.7.0\\prefab\\modules\\fbjni\\libs\\android.armeabi-v7a\\libfbjni.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\1e84847373c8b60ddb3f088099977c2a\\transformed\\react-android-0.82.1-debug\\prefab\\modules\\jsi\\libs\\android.armeabi-v7a\\libjsi.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\1e84847373c8b60ddb3f088099977c2a\\transformed\\react-android-0.82.1-debug\\prefab\\modules\\reactnative\\libs\\android.armeabi-v7a\\libreactnative.so"
+      ]
+    },
+    "react_codegen_RNWorkletsSpec::@c787b30dd2b0f948dced": {
+      "artifactName": "react_codegen_RNWorkletsSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "appmodules::@6890427a1f51a3e7e1df": {
+      "artifactName": "appmodules",
+      "abi": "armeabi-v7a",
+      "output": "C:\\tmp\\isparta1\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\101f423o\\obj\\armeabi-v7a\\libappmodules.so",
+      "runtimeFiles": [
+        "C:\\tmp\\isparta1\\iSparta\\android\\app\\build\\intermediates\\cxx\\Debug\\101f423o\\obj\\armeabi-v7a\\libreact_codegen_safeareacontext.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\5fa135f9220cf0ae1e3ee40cd371125b\\transformed\\fbjni-0.7.0\\prefab\\modules\\fbjni\\libs\\android.armeabi-v7a\\libfbjni.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\1e84847373c8b60ddb3f088099977c2a\\transformed\\react-android-0.82.1-debug\\prefab\\modules\\jsi\\libs\\android.armeabi-v7a\\libjsi.so",
+        "C:\\Users\\Neo\\.gradle\\caches\\9.0.0\\transforms\\1e84847373c8b60ddb3f088099977c2a\\transformed\\react-android-0.82.1-debug\\prefab\\modules\\reactnative\\libs\\android.armeabi-v7a\\libreactnative.so"
+      ]
+    },
+    "react_codegen_RNVisionCameraResizePluginSpec::@b854915dd612a363dc6f": {
+      "artifactName": "react_codegen_RNVisionCameraResizePluginSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnskia::@376d8504f62839611b97": {
+      "artifactName": "react_codegen_rnskia",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_RNTfliteSpec::@296f182f36326455dd18": {
+      "artifactName": "react_codegen_RNTfliteSpec",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    },
+    "react_codegen_rnworklets::@68f58d84d4754f193387": {
+      "artifactName": "react_codegen_rnworklets",
+      "abi": "armeabi-v7a",
+      "runtimeFiles": []
+    }
+  }
+}

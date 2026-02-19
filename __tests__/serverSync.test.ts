@@ -124,4 +124,43 @@ describe('ServerSyncService - Integration', () => {
         expect(runningSet.route_points).toEqual([{ lat: 10, lon: 10 }, { lat: 20, lon: 20 }]);
         expect(runningSet.route_bounds).toEqual({ minLat: 0, maxLat: 20, minLon: 0, maxLon: 20 });
     });
+
+    afterAll(async () => {
+        // Cleanup: delete test sessions and user
+        const deleteSessionsMutation = `
+            mutation {
+                delete_workout_sessions(where: { user_public_key: { _eq: "${testPublicKey}" } }) {
+                    affected_rows
+                }
+            }
+        `;
+
+        await fetch(HASURA_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-hasura-admin-secret': ADMIN_SECRET
+            },
+            body: JSON.stringify({ query: deleteSessionsMutation })
+        });
+
+        const deleteUserMutation = `
+            mutation {
+                delete_users_by_pk(ed25519_public_key: "${testPublicKey}") {
+                    ed25519_public_key
+                }
+            }
+        `;
+
+        await fetch(HASURA_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-hasura-admin-secret': ADMIN_SECRET
+            },
+            body: JSON.stringify({ query: deleteUserMutation })
+        });
+
+        console.log('✅ Test cleanup: deleted test user and sessions');
+    });
 });

@@ -7,8 +7,8 @@ import WorkoutScreen from './WorkoutScreen';
 import ProfileScreen from './ProfileScreen';
 import LeaderboardScreen from './LeaderboardScreen';
 import RunningMapScreen from './RunningMapScreen';
-import MapScreen from './MapScreen';
 import SettingsScreen from './SettingsScreen';
+import AppsScreen, { AppsIcon } from './AppsScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -19,6 +19,12 @@ const HomeIcon = ({ color, size = 24 }: { color: string; size?: number }) => (
         <Path fill={color} d="M29.5 35.3v7.9l12.5 2v-7.7q.1-1.8 1.7-2.5a3 3 0 0 0-2.1-1.4l-8.4-1.4c-2-.5-3.7 1.1-3.7 3.1" />
         <Path fill={color} d="M46.8 37.4c0-1.2-1-2.3-2.2-2.3s-2.2 1-2.2 2.3v7.8l4.4.7z" />
         <Path fill={color} d="M48.1 46.7V5.4L24.6 1.5v41.4Zm1.3-42.4v44L23.3 44V0Z" />
+    </Svg>
+);
+
+const WorkoutIcon = ({ color, size = 24 }: { color: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 66 66">
+        <Path fill={color} d="m58 15.5-3 31.8q0 .6.2 1.2l2.6 8.4v.1a5 5 0 0 1-3.4 6.2A77 77 0 0 1 33 66q-11.7 0-21.4-2.8a5 5 0 0 1-3.4-6.3l2.6-8.4q.2-.6.1-1.2L8 15.5a9 9 0 0 1-5.6-6L0 1.3a1 1 0 1 1 2-.6L4.3 9A7 7 0 0 0 11 14h16a1 1 0 0 1 0 2H10L13 47a5 5 0 0 1-.3 2l-2.6 8.4a3 3 0 0 0 2 3.8A75 75 0 0 0 33 64q11.5 0 20.8-2.7a3 3 0 0 0 2.1-3.7L53.3 49l-.2-1.9L55.9 16H39a1 1 0 0 1 0-2h16a7 7 0 0 0 6.7-5L64 .6a1 1 0 1 1 2 .6l-2.4 8.2a9 9 0 0 1-5.6 6m-25 44a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m20-50a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m-40 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m19 22.9-4.7 1.5a1 1 0 1 1-.6-1.8l5.3-1.8V29a1 1 0 0 1 2 0v1.3l5.3 1.8a1 1 0 1 1-.6 1.8L34 32.4v5.9l5.3 1.8a1 1 0 1 1-.6 1.8L34 40.4v5.9l5.3 1.8a1 1 0 1 1-.6 1.8L34 48.4V51a1 1 0 0 1-2 0v-2.6l-4.7 1.5a1 1 0 1 1-.6-1.8l5.3-1.8v-6L27.3 42a1 1 0 1 1-.6-1.8l5.3-1.8ZM19 28a1 1 0 0 1 0-2h2a3 3 0 0 0 2.4-1.1l1.6-2a5 5 0 0 1 4-1.9h8a5 5 0 0 1 4 1.9l1.6 2a3 3 0 0 0 2.3 1.1H47a1 1 0 0 1 0 2h-2a5 5 0 0 1-4-1.9l-1.6-2a3 3 0 0 0-2.3-1.1h-8.2a3 3 0 0 0-2.3 1.1l-1.6 2a5 5 0 0 1-4 1.9Z" />
     </Svg>
 );
 
@@ -69,9 +75,9 @@ const SettingsIcon = ({ color, size = 24 }: { color: string; size?: number }) =>
 );
 
 export type TabParamList = {
-    Home: undefined;
+    Workout: undefined;
     Running: undefined;
-    Map: undefined;
+    Apps: undefined;
     Leaderboard: undefined;
     Profile: undefined;
     Settings: undefined;
@@ -80,18 +86,19 @@ export type TabParamList = {
 function TabNavigator() {
     return (
         <Tab.Navigator
+            initialRouteName="Profile"
             screenOptions={({ route }) => ({
                 tabBarIcon: ({ focused, color, size }) => {
                     const iconSize = size || 24;
                     const iconColor = focused ? '#FF14A7' : color;
 
                     switch (route.name) {
-                        case 'Home':
-                            return <HomeIcon color={iconColor} size={iconSize} />;
+                        case 'Workout':
+                            return <WorkoutIcon color={iconColor} size={iconSize} />;
                         case 'Running':
                             return <RunningIcon color={iconColor} size={iconSize} />;
-                        case 'Map':
-                            return <MapIcon color={iconColor} size={iconSize} />;
+                        case 'Apps':
+                            return <AppsIcon color={iconColor} size={iconSize} />;
                         case 'Leaderboard':
                             return <LeaderboardIcon color={iconColor} size={iconSize} />;
                         case 'Profile':
@@ -111,12 +118,12 @@ function TabNavigator() {
             })}
         >
             <Tab.Screen
-                name="Home"
+                name="Workout"
                 component={WorkoutScreen}
                 initialParams={{ onNavigateToProfile: undefined }}
             />
             <Tab.Screen name="Running" component={RunningMapScreen} />
-            <Tab.Screen name="Map" component={MapScreen} />
+            <Tab.Screen name="Apps" component={AppsScreen} />
             <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Tab.Screen name="Profile" component={ProfileScreen} />
             <Tab.Screen name="Settings" component={SettingsScreen} />

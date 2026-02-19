@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "RNVisionCameraResizePluginSpec_autolinked_build",
+		"source" : "C:/tmp/isparta1/iSparta/node_modules/vision-camera-resize-plugin/android/build/generated/source/codegen/jni"
+	}
+}

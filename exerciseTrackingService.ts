@@ -1,6 +1,25 @@
 import { EXERCISES, ExerciseType, QueueItem } from './types';
 import { BodyAngles, ExerciseCounter, PushupsCounter, SquatsCounter } from './deepfitUtils';
 
+// Map each exercise to its counter type (reps or seconds/duration)
+const ExerciseTypeMap: Record<EXERCISES, ExerciseType> = {
+    [EXERCISES.SQUATS]: 'reps',
+    [EXERCISES.LUNGES]: 'seconds',
+    [EXERCISES.BICEP_CURLS]: 'seconds',
+    [EXERCISES.SITUPS]: 'seconds',
+    [EXERCISES.PUSHUPS]: 'reps',
+    [EXERCISES.TRICEP_EXTENSIONS]: 'seconds',
+    [EXERCISES.DUMBBELL_ROWS]: 'seconds',
+    [EXERCISES.JUMPING_JACKS]: 'seconds',
+    [EXERCISES.DUMBBELL_SHOULDER_PRESS]: 'seconds',
+    [EXERCISES.LATERAL_SHOULDER_RAISES]: 'seconds',
+    [EXERCISES.RUNNING]: 'seconds',
+    [EXERCISES.CYCLING]: 'seconds',
+    [EXERCISES.SWIMMING]: 'seconds',
+    [EXERCISES.STEPS]: 'reps',
+    [EXERCISES.UNKNOWN]: 'seconds',
+};
+
 export interface SimpleExerciseRecord {
     duration: number;      // seconds
     reps?: number;         // optional, for rep-based exercises
@@ -42,8 +61,8 @@ export class WorkoutSession {
         const initialExercises = Object.values(EXERCISES).reduce((acc, exercise) => {
             acc[exercise] = {
                 duration: 0,
-                reps: (ExerciseType[exercise] === 'reps') ? 0 : undefined,
-                direction: (ExerciseType[exercise] === 'reps') ? 0 : undefined,
+                reps: (ExerciseTypeMap[exercise] === 'reps') ? 0 : undefined,
+                direction: (ExerciseTypeMap[exercise] === 'reps') ? 0 : undefined,
                 exerciseCounter: (exercise === EXERCISES.PUSHUPS) ? new PushupsCounter(this.incrementReps.bind(this, exercise)) :
                     (exercise === EXERCISES.SQUATS) ? new SquatsCounter(this.incrementReps.bind(this, exercise)) : undefined
             };
@@ -60,11 +79,16 @@ export class WorkoutSession {
 
     calculate(exercise: EXERCISES, angles: BodyAngles): { duration: number; reps?: number; percent?: number } {
         console.log('exercise', exercise);
-        let percent = this.s.exercises[exercise].exerciseCounter?.checkAngles(angles);
+        const exerciseRecord = this.s.exercises[exercise];
+        if (!exerciseRecord) {
+            console.log('Exercise record not found for:', exercise);
+            return { duration: 0, reps: 0, percent: 0 };
+        }
+        let percent = exerciseRecord.exerciseCounter?.checkAngles(angles);
         console.log('percent2', percent);
         return {
-            duration: this.s.exercises[exercise].duration,
-            reps: this.s.exercises[exercise].reps,
+            duration: exerciseRecord.duration,
+            reps: exerciseRecord.reps,
             percent: percent
         };
     }

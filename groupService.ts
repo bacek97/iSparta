@@ -309,3 +309,95 @@ export async function joinGroupByName(
     const members = await addMembers(group.group_id, [userPublicKey]);
     return members[0];
 }
+
+// ==================== GET ALL GROUPS ====================
+
+export interface GroupListItem {
+    group_id: string;
+    group_name: string;
+    created_by: string;
+    member_count: number;
+}
+
+export async function getAllGroups(limit: number = 50): Promise<GroupListItem[]> {
+    const query = `
+        query GetAllGroups($limit: Int!) {
+            user_groups(limit: $limit, order_by: { created_at: desc }) {
+                group_id
+                group_name
+                created_by
+                members_aggregate {
+                    aggregate {
+                        count
+                    }
+                }
+            }
+        }
+    `;
+
+    const data = await hasuraQuery(query, { limit });
+
+    return data.user_groups.map((g: any) => ({
+        group_id: g.group_id,
+        group_name: g.group_name,
+        created_by: g.created_by,
+        member_count: g.members_aggregate?.aggregate?.count || 0
+    }));
+}
+
+// ==================== CHECK GROUP NAME EXISTS ====================
+
+export async function checkGroupNameExists(groupName: string): Promise<boolean> {
+    const query = `
+        query CheckGroupName($name: String!) {
+            user_groups(where: { group_name: { _eq: $name } }, limit: 1) {
+                group_id
+            }
+        }
+    `;
+
+    const data = await hasuraQuery(query, { name: groupName });
+    return data.user_groups.length > 0;
+}
+
+export async function joinGroupById(
+    groupId: string,
+    userPublicKey: string
+): Promise<GroupMember> {
+    const members = await addMembers(groupId, [userPublicKey]);
+    return members[0];
+}
+
+// ==================== GET GROUP MEMBERS BY ID ====================
+
+export interface GroupMemberInfo {
+    user_public_key: string;
+    is_admin: boolean;
+    joined_at: string;
+    user?: {
+        nickname: string | null;
+        fms_category: string | null;
+    };
+}
+
+export async function getGroupMembersById(groupId: string): Promise<GroupMemberInfo[]> {
+    const query = `
+        query GetGroupMembers($groupId: String!) {
+            group_members(
+                where: { group_id: { _eq: $groupId } },
+                order_by: [{ is_admin: desc }, { joined_at: asc }]
+            ) {
+                user_public_key
+                is_admin
+                joined_at
+                user {
+                    nickname
+                    fms_category
+                }
+            }
+        }
+    `;
+
+    const data = await hasuraQuery(query, { groupId });
+    return data.group_members;
+}

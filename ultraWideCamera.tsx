@@ -39,9 +39,10 @@ const CameraScreen: React.FC<CameraScreenProps> = ({ frameProcessor, onOutputOri
     const cameraRef = useRef<Camera | null>(null)
     //   const isFocused = useIsFocused()
     const isFocused = true
-    const isForeground = true
+    // FIX: Call hook at component level, not inside JSX
+    const appState = useAppState()
+    const isActive = isFocused && appState === 'active'
 
-    const isActive = isFocused && isForeground
     const physicalCameras = Camera.getAvailableCameraDevices()
     const backCameras = physicalCameras?.filter((d) => d.position === 'front')
     let supportedDevice: CameraDevice | undefined = useCameraDevice('front', {
@@ -124,7 +125,7 @@ const CameraScreen: React.FC<CameraScreenProps> = ({ frameProcessor, onOutputOri
                         ref={cameraRef}
                         enableZoomGesture
                         resizeMode="cover"
-                        isActive={useAppState() === "active"}
+                        isActive={isActive}
                         style={styles.camera}
                         device={ultraWideDevice!}
                         format={selectedFormat}

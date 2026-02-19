@@ -307,43 +307,33 @@ function normX(X: Float32Array): Float32Array {
 }
 
 /**
- * Exercise labels (must match DeepFit training order)
+ * Exercise labels — must match the DeepFit training order exactly!
+ * v4 model: classes = ['squats', 'pushups', 'situps', 'pullups']
+ * Index 0 = SQUATS, 1 = PUSHUPS, 2 = SITUPS, 3 = PULLUPS
  */
-// export const EXERCISE_LABELS = [
-//     'squats',
-//     'lunges',
-//     'bicep_curls',
-//     'situps',
-//     'pushups',
-//     'tricep_extensions',
-//     'dumbbell_rows',
-//     'jumping_jacks',
-//     'dumbbell_shoulder_press',
-//     'lateral_shoulder_raises',
-//     'Unknown'
-// ];
-
-
+const DEEPFIT_MODEL_LABELS: EXERCISES[] = [
+    EXERCISES.SQUATS,     // model output index 0
+    EXERCISES.SITUPS,     // model output index 2
+    EXERCISES.PUSHUPS,    // model output index 1
+    EXERCISES.PULLUPS,    // model output index 3
+];
 
 /**
  * Get exercise name from model output
  * Returns both name and maxValue for better exercise identification
  */
-
-
 export function getExerciseNameAndConfidence(modelOutput: Float32Array | number[]): QueueItem {
     let item: QueueItem = { name: EXERCISES.UNKNOWN, confidence: 0 };
     let maxConfidence = 0;
-    let i = 0;
-    for (const exercise of Object.values(EXERCISES)) {
+
+    for (let i = 0; i < DEEPFIT_MODEL_LABELS.length && i < modelOutput.length; i++) {
         if (modelOutput[i] > maxConfidence) {
             maxConfidence = modelOutput[i];
             item = {
-                name: exercise,
-                confidence: maxConfidence
+                name: DEEPFIT_MODEL_LABELS[i],
+                confidence: maxConfidence,
             };
         }
-        i++;
     }
 
     return item;

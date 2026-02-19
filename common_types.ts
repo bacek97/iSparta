@@ -61,6 +61,9 @@ export interface WorkoutSession {
     user_public_key: string;
     session_date: string; // ISO 8601 timestamp
     exercise_sets: ExerciseSet[];
+    // Optional fields from server (after bonus calculation)
+    base_points?: number;
+    total_points?: number;
 }
 
 // ==================== USER DATA ====================
@@ -158,9 +161,39 @@ export function validateWorkoutSession(session: any): asserts session is Workout
     }
 }
 
+// ==================== WORKOUT PUBLICATIONS ====================
+
+export interface WorkoutPublication {
+    id?: number;
+    session_signature: string;
+    user_public_key: string;
+    group_id: string;  // Required foreign key
+    text_content?: string;
+    images?: string[]; // base64 encoded images
+    map_svg_path?: string; // SVG path for RUNNING workouts
+    include_map?: boolean;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface CreatePublicationInput {
+    session_signature: string;
+    group_id: string;  // Required for foreign key constraint
+    text_content?: string;
+    images?: string[]; // Max 5
+    include_map?: boolean;
+    map_svg_path?: string; // SVG path passed directly from client
+}
+
+export interface PublicationWithWorkout extends WorkoutPublication {
+    workout_session: WorkoutSession;
+    user_name?: string;
+}
+
 // ==================== CONSTANTS ====================
 
 export const EXERCISE_NAMES: Record<EXERCISES, string> = {
+
     [EXERCISES.SQUATS]: 'Squats',
     [EXERCISES.PUSHUPS]: 'Pushups',
     [EXERCISES.LUNGES]: 'Lunges',
