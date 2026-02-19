@@ -8,8 +8,7 @@
 [rustore7]: https://static.rustore.ru/2025/12/27/b9/apk/2063684073/content/SCREENSHOT/55384d27-1e84-4104-909d-81bb4a7381a9.jpg
 [rustore8]: https://static.rustore.ru/2025/12/27/02/apk/2063684073/content/SCREENSHOT/f9222e17-42d9-4367-8660-d520b8e86965.jpg
 
-# Прототип приложения с распознаванием жестов
-table 4 cols
+# Прототип приложения с распознаванием и подсчётом повторений упражнений
 
 | | | | |
 | --- | --- | --- | --- |
