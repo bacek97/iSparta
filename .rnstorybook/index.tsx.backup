@@ -1,0 +1,56 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { view } from './storybook.requires';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import React from 'react';
+
+const StorybookUI = view.getStorybookUI({
+  storage: {
+    getItem: AsyncStorage.getItem,
+    setItem: AsyncStorage.setItem,
+  },
+});
+
+const StorybookUIRoot = () => {
+  return (
+    <View style= {{ flex: 1 }
+}>
+  <StorybookUI />
+  < TouchableOpacity
+style = { styles.exitButton }
+onPress = { async() => {
+  await AsyncStorage.setItem('@iSparta:showStorybook', 'false');
+  // This just requires a reload, but alerts are tricky in Storybook root, 
+  // we can just force a reload using native modules or tell the user.
+  // Since DevSettings is only available in dev mode, we'll just show an instruction
+  alert('Storybook выключен. Нажмите R в терминале Metro или перезапустите приложение.');
+}}
+            >
+  <Text style={ styles.exitText }>❌ Выйти из Storybook </Text>
+    </TouchableOpacity>
+    </View>
+    );
+};
+
+const styles = StyleSheet.create({
+  exitButton: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    backgroundColor: '#FF4785',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  exitText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 14,
+  }
+});
+
+export default StorybookUIRoot;

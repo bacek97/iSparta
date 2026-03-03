@@ -78,7 +78,7 @@ export const GlobalLeaderboardComponent: React.FC<GlobalLeaderboardComponentProp
                     <Text style={styles.points}>
                         {item.total_points.toLocaleString()}
                     </Text>
-                    <Text style={styles.pointsLabel}>очков</Text>
+                    <Text style={styles.pointsLabel}>сохранено минут</Text>
                 </View>
 
                 {!isCurrentUser && (
@@ -103,7 +103,7 @@ export const GlobalLeaderboardComponent: React.FC<GlobalLeaderboardComponentProp
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>🏆 Глобальный рейтинг</Text>
+                <Text style={styles.title}>🏆 Глобальный рейтинг (14 дней)</Text>
                 <Text style={styles.subtitle}>
                     {leaderboard.length} участников
                 </Text>

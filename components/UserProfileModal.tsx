@@ -441,7 +441,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                                                     <View style={styles.sessionExercises}>
                                                         {session.exercise_sets.slice(0, 4).map((ex, i) => (
                                                             <Text key={i} style={styles.sessionExercise}>
-                                                                {ex.exercise_type}: {ex.reps || 0} повт.
+                                                                {ex.exercise_type}: {ex.exercise_type === 'UNUSED_MINUTES' ? `${Math.round(ex.seconds / 60)} мин.` : `${ex.reps || 0} повт.`}
                                                             </Text>
                                                         ))}
                                                         {session.exercise_sets.length > 4 && (
